@@ -1390,22 +1390,25 @@ if (isset($_POST["export_client_pdf"])) {
               <th>Description</th>
               <th>Username</th>
               <th>Password</th>
+              <th>TOTP</th>
               <th>URI</th>
             </tr>
           </thead>
           <tbody>";
         while ($row = mysqli_fetch_array($sql_credentials)) {
             $credential_name = nullable_htmlentities($row["credential_name"]);
-            $credential_description = nullable_htmlentities($row["credential_description"]);
+            $credential_description = getFallback(nullable_htmlentities($row["credential_description"]));
             $credential_username = nullable_htmlentities(decryptCredentialEntry($row["credential_username"]));
             $credential_password = nullable_htmlentities(decryptCredentialEntry($row["credential_password"]));
-            $credential_uri = nullable_htmlentities($row["credential_uri"]);
+            $credential_totp_secret = getFallback(nullable_htmlentities($row['credential_otp_secret']));
+            $credential_uri = getFallback(nullable_htmlentities($row["credential_uri"]));
             $html .= "
             <tr>
               <td>$credential_name</td>
               <td>$credential_description</td>
               <td>$credential_username</td>
               <td>$credential_password</td>
+              <td>$credential_totp_secret</td>
               <td>$credential_uri</td>
             </tr>";
         }
