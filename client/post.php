@@ -440,7 +440,7 @@ if (isset($_GET['add_payment_by_provider'])) {
     $sql = mysqli_query($mysqli,"SELECT * FROM invoices
             LEFT JOIN clients ON invoice_client_id = client_id
             LEFT JOIN contacts ON client_id = contact_client_id AND contact_primary = 1
-            WHERE invoice_id = $invoice_id"
+            WHERE invoice_id = $invoice_id AND client_id = $session_client_id"
     );
     $row = mysqli_fetch_array($sql);
     $invoice_number = intval($row['invoice_number']);
