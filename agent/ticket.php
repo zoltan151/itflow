@@ -416,11 +416,6 @@ if (isset($_GET['ticket_id'])) {
                                         <i class="fas fa-fw fa-ellipsis-v"></i>
                                     </button>
                                     <div class="dropdown-menu">
-                                        <a class="dropdown-item ajax-modal" href="#"
-                                            data-modal-size = "lg"
-                                            data-modal-url="modals/ticket/ticket_edit.php?id=<?= $ticket_id ?>">
-                                            <i class="fas fa-fw fa-edit mr-2"></i>Edit
-                                        </a>
                                         <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/ticket/ticket_summary.php?ticket_id=<?= $ticket_id ?>" data-modal-size="lg">
                                             <i class="fas fa-fw fa-lightbulb mr-2"></i>Summarize
                                         </a>
@@ -565,9 +560,14 @@ if (isset($_GET['ticket_id'])) {
                 <div class="card card-dark mb-3">
 
                     <div class="card-header bg-dark">
-                        <h3 class="card-title">
+                        <h5 class="card-title">
                             Ticket Details
-                        </h3>
+                        </h5>
+                        <?php if (empty($ticket_closed_at)) { ?>
+                        <div class="card-tools">
+                            <button type="button" class="btn btn-tool ajax-modal" data-modal-url="modals/ticket/ticket_edit.php?id=<?= $ticket_id ?>" data-modal-size="lg"><i class="fas fa-edit"></i></button>
+                        </div>
+                        <?php } ?>
                     </div>
 
                     <div class="card-body prettyContent" id="ticketDetails">
