@@ -5,7 +5,7 @@ This file documents all notable changes made to ITFlow.
 ## [25.12] Stable Release
 
 ### Breaking Changes ###
-- Existing installs php-xml extension needs to be installed for document creation and editing.
+- For Existing installs: **php-xml** extension needs to be installed for document creation and editing, new install script does this for you as of Dec 6th 2025. To install php-xml: `sudo apt install php-xml`
 
 ### Major Changes
 - Consolidated "Files" and "Documents" into a single section called **Files**.
