@@ -319,7 +319,7 @@ We will provide example code with directory structure for each custom directory 
 ---
 
 ### Fixed
-- Several security vulnerabilities patched.
+- Several security vulnerabilities patched (with thanks to www.helx.io).
 - Ticket status is no longer updated when scheduling.
 - Client Portal: Tech contacts can no longer edit their own details.
 - Fixed overlapping logo issue in Invoice/Quote PDF exports.

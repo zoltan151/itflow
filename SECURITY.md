@@ -13,7 +13,7 @@ We operate a rolling release model. Any bug fixes will be released into latest v
 
 | Version | Supported          |
 |---------| ------------------ |
-| 25.05   | :white_check_mark: |
+| 25.12   | :white_check_mark: |
 
 ## Reporting a Vulnerability via GitHub Security Advisories
 
