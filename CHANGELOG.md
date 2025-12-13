@@ -15,6 +15,7 @@ This file documents all notable changes made to ITFlow.
 - You can now Set Payment Provider income/expense account, expense vendor and expense category upond creation or editing.
 - Moved Saved Payment Provider Methods away from admin side nav to the count link within Payment Providers page.
 - Moved AI Models from the admin side nav to the model count link within AI Providers.
+- Add Favicon Reset.
 
 ## [25.12] Stable Release
 
