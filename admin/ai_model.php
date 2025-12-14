@@ -12,6 +12,16 @@ $num_rows = mysqli_num_rows($sql);
 
 ?>
 
+<ol class="breadcrumb d-print-none">
+    <li class="breadcrumb-item">
+        <a href="/admin">Admin</a>
+    </li>
+    <li class="breadcrumb-item">
+        <a href="ai_provider.php">AI Providers</a>
+    </li>
+    <li class="breadcrumb-item active">AI Models</li>
+</ol>
+
 <div class="card card-dark">
     <div class="card-header py-2">
         <h3 class="card-title mt-2"><i class="fas fa-fw fa-robot mr-2"></i>AI Models</h3>

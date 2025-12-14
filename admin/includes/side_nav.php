@@ -69,28 +69,18 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a href="/admin/payment_provider.php" class="nav-link <?php echo (basename($_SERVER['PHP_SELF']) == 'payment_provider.php' ? 'active' : ''); ?>">
+                        <a href="/admin/payment_provider.php"
+                           class="nav-link <?php echo (in_array(basename($_SERVER['PHP_SELF']), ['payment_provider.php', 'saved_payment_method.php']) ? 'active' : ''); ?>">
                             <i class="nav-icon far fa-credit-card"></i>
                             <p>Payment Providers</p>
                         </a>
                     </li>
-                    <li class="nav-item">
-                        <a href="/admin/saved_payment_method.php" class="nav-link <?php echo (basename($_SERVER['PHP_SELF']) == 'saved_payment_method.php' ? 'active' : ''); ?>">
-                            <i class="nav-icon far fa-credit-card"></i>
-                            <p>Saved Payments</p>
-                        </a>
-                    </li>
                 <?php } ?>
                     <li class="nav-item">
-                        <a href="/admin/ai_provider.php" class="nav-link <?php echo (basename($_SERVER['PHP_SELF']) == 'ai_provider.php' ? 'active' : ''); ?>">
+                        <a href="/admin/ai_provider.php"
+                        class="nav-link <?php echo (in_array(basename($_SERVER['PHP_SELF']), ['ai_provider.php', 'ai_model.php']) ? 'active' : ''); ?>">
                             <i class="nav-icon fas fa-robot"></i>
                             <p>AI Providers</p>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a href="/admin/ai_model.php" class="nav-link <?php echo (basename($_SERVER['PHP_SELF']) == 'ai_model.php' ? 'active' : ''); ?>">
-                            <i class="nav-icon fas fa-robot"></i>
-                            <p>AI Models</p>
                         </a>
                     </li>
 

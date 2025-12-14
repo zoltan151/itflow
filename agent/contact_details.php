@@ -14,7 +14,7 @@ if (isset($_GET['client_id'])) {
 if (isset($_GET['contact_id'])) {
     $contact_id = intval($_GET['contact_id']);
 
-    $sql = mysqli_query($mysqli, "SELECT * FROM contacts 
+    $sql = mysqli_query($mysqli, "SELECT * FROM contacts
         LEFT JOIN clients ON client_id = contact_client_id
         LEFT JOIN locations ON location_id = contact_location_id
         LEFT JOIN users ON user_id = contact_user_id
@@ -76,7 +76,7 @@ if (isset($_GET['contact_id'])) {
 
     // Linked Software Licenses
     $sql_linked_software = mysqli_query($mysqli, "SELECT * FROM software_contacts, software
-        WHERE software_contacts.contact_id = $contact_id 
+        WHERE software_contacts.contact_id = $contact_id
         AND software_contacts.software_id = software.software_id
         AND software_archived_at IS NULL
         ORDER BY software_name ASC"
@@ -109,7 +109,7 @@ if (isset($_GET['contact_id'])) {
     $ticket_count = mysqli_num_rows($sql_related_tickets);
 
     // Related Recurring Tickets Query
-    $sql_related_recurring_tickets = mysqli_query($mysqli, "SELECT * FROM recurring_tickets 
+    $sql_related_recurring_tickets = mysqli_query($mysqli, "SELECT * FROM recurring_tickets
         WHERE recurring_ticket_contact_id = $contact_id
         ORDER BY recurring_ticket_next_run DESC"
     );
@@ -144,7 +144,7 @@ if (isset($_GET['contact_id'])) {
 
      // Linked Services
     $sql_linked_services = mysqli_query($mysqli, "SELECT * FROM service_contacts, services
-        WHERE service_contacts.contact_id = $contact_id 
+        WHERE service_contacts.contact_id = $contact_id
         AND service_contacts.service_id = services.service_id
         ORDER BY service_name ASC"
     );
@@ -155,7 +155,7 @@ if (isset($_GET['contact_id'])) {
     // Linked Documents
     $sql_linked_documents = mysqli_query($mysqli, "SELECT * FROM contact_documents, documents
         LEFT JOIN users ON document_created_by = user_id
-        WHERE contact_documents.contact_id = $contact_id 
+        WHERE contact_documents.contact_id = $contact_id
         AND contact_documents.document_id = documents.document_id
         AND document_archived_at IS NULL
         ORDER BY document_name ASC"
@@ -166,7 +166,7 @@ if (isset($_GET['contact_id'])) {
 
     // Linked Files
     $sql_linked_files = mysqli_query($mysqli, "SELECT * FROM contact_files, files
-        WHERE contact_files.contact_id = $contact_id 
+        WHERE contact_files.contact_id = $contact_id
         AND contact_files.file_id = files.file_id
         AND file_archived_at IS NULL
         ORDER BY file_name ASC"
@@ -473,8 +473,8 @@ if (isset($_GET['contact_id'])) {
                                                     <i class="fas fa-fw fa-copy mr-2"></i>Copy
                                                 </a>
                                                 <div class="dropdown-divider"></div>
-                                                <a class="dropdown-item" 
-                                                    href="post.php?unlink_asset_from_contact&contact_id=<?php echo $contact_id; ?>&asset_id=<?php echo $asset_id; ?>" 
+                                                <a class="dropdown-item"
+                                                    href="post.php?unlink_asset_from_contact&contact_id=<?php echo $contact_id; ?>&asset_id=<?php echo $asset_id; ?>"
                                                     class="btn btn-secondary btn-sm" title="Unlink">
                                                     <i class="fas fa-fw fa-unlink mr-2"></i>Unlink
                                                 </a>
@@ -613,8 +613,8 @@ if (isset($_GET['contact_id'])) {
                                                     <i class="fas fa-fw fa-share-alt mr-2"></i>Share
                                                 </a>
                                                 <div class="dropdown-divider"></div>
-                                                <a class="dropdown-item" 
-                                                    href="post.php?unlink_credential_from_contact&contact_id=<?php echo $contact_id; ?>&credential_id=<?php echo $credential_id; ?>" 
+                                                <a class="dropdown-item"
+                                                    href="post.php?unlink_credential_from_contact&contact_id=<?php echo $contact_id; ?>&credential_id=<?php echo $credential_id; ?>"
                                                     class="btn btn-secondary btn-sm" title="Unlink">
                                                     <i class="fas fa-fw fa-unlink mr-2"></i>Unlink
                                                 </a>
@@ -797,7 +797,9 @@ if (isset($_GET['contact_id'])) {
                 <div class="card-header py-2">
                     <h3 class="card-title mt-2"><i class="fa fa-fw fa-life-ring mr-2"></i>Related Tickets</h3>
                     <div class="card-tools">
-                        <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#addTicketModal">
+                        <button type="button" class="btn btn-primary ajax-modal"
+                            data-modal-url="modals/ticket/ticket_add.php?<?= $client_url ?>&contact_id=<?= $contact_id ?>"
+                            data-modal-size="lg">
                             <i class="fas fa-plus mr-2"></i>New Ticket
                         </button>
                     </div>
@@ -1071,7 +1073,7 @@ if (isset($_GET['contact_id'])) {
                     </div>
                 </div>
             </div>
-                
+
             <div class="card card-dark <?php if ($note_count == 0) { echo "d-none"; } ?>">
                 <div class="card-header py-2">
                     <h3 class="card-title mt-2"><i class="fa fa-fw fa-sticky-note mr-2"></i>Notes</h3>

@@ -13,18 +13,18 @@ $sql = mysqli_query($mysqli, "
         clients.client_name,
         client_payment_provider.payment_provider_client
     FROM client_saved_payment_methods
-    LEFT JOIN payment_providers 
+    LEFT JOIN payment_providers
         ON client_saved_payment_methods.saved_payment_provider_id = payment_providers.payment_provider_id
-    LEFT JOIN clients 
+    LEFT JOIN clients
         ON client_saved_payment_methods.saved_payment_client_id = clients.client_id
     LEFT JOIN client_payment_provider
         ON client_payment_provider.client_id = client_saved_payment_methods.saved_payment_client_id
         AND client_payment_provider.payment_provider_id = client_saved_payment_methods.saved_payment_provider_id
-    WHERE 
-        client_name LIKE '%$q%' 
-        OR payment_provider_name LIKE '%$q%' 
-        OR saved_payment_description LIKE '%$q%' 
-        OR payment_provider_client LIKE '%$q%' 
+    WHERE
+        client_name LIKE '%$q%'
+        OR payment_provider_name LIKE '%$q%'
+        OR saved_payment_description LIKE '%$q%'
+        OR payment_provider_client LIKE '%$q%'
         OR saved_payment_provider_method LIKE '%$q%'
     ORDER BY $sort $order
 ");
@@ -32,6 +32,16 @@ $sql = mysqli_query($mysqli, "
 $num_rows = mysqli_fetch_row(mysqli_query($mysqli, "SELECT FOUND_ROWS()"));
 
 ?>
+
+<ol class="breadcrumb d-print-none">
+    <li class="breadcrumb-item">
+        <a href="/admin">Admin</a>
+    </li>
+    <li class="breadcrumb-item">
+        <a href="payment_provider.php">Payment Providers</a>
+    </li>
+    <li class="breadcrumb-item active">Saved Payment Methods (Stripe)</li>
+</ol>
 
 <div class="card card-dark">
     <div class="card-header">
@@ -107,8 +117,16 @@ $num_rows = mysqli_fetch_row(mysqli_query($mysqli, "SELECT FOUND_ROWS()"));
 
                     ?>
                     <tr>
-                        <td><?php echo $client_name; ?> (<?php echo $client_id; ?>)</td>
-                        <td><?php echo $provider_name; ?> (<?php echo $provider_id; ?>)</td>
+                        <td>
+                            <?= $client_name ?>
+                            <br>
+                            <small class="text-secondary">ID: <?= $client_id ?></small>
+                        </td>
+                        <td>
+                            <?= $provider_name ?>
+                            <br>
+                            <small class="text-secondary">ID: <?= $provider_id ?></small>
+                        </td>
                         <td><?php echo $saved_payment_description; ?></td>
                         <td><?php echo $provider_client; ?></td>
                         <td><?php echo $provider_payment_method; ?></td>

@@ -6,10 +6,10 @@ $order = "ASC";
 
 require_once "includes/inc_all_admin.php";
 
-$sql = mysqli_query($mysqli, "SELECT * FROM payment_providers 
+$sql = mysqli_query($mysqli, "SELECT * FROM payment_providers
     LEFT JOIN accounts ON payment_provider_account = account_id
     LEFT JOIN vendors ON payment_provider_expense_vendor = vendor_id
-    LEFT JOIN categories ON payment_provider_expense_category = category_id 
+    LEFT JOIN categories ON payment_provider_expense_category = category_id
     ORDER BY $sort $order"
 );
 
@@ -57,7 +57,7 @@ $num_rows = mysqli_num_rows($sql);
                     <th>
                         <a class="text-dark">Expensed Fee</a>
                     </th>
-                    <th>
+                    <th class="text-center">
                         <a class="text-dark">Saved Payment Methods</a>
                     </th>
                     <th class="text-center">Action</th>
@@ -72,7 +72,7 @@ $num_rows = mysqli_num_rows($sql);
                     $provider_description = nullable_htmlentities($row['payment_provider_description']);
                     $account_name = nullable_htmlentities($row['account_name']);
                     $threshold = floatval($row['payment_provider_threshold']);
-                    $vendor_name = nullable_htmlentities($row['vendor_name']);
+                    $vendor_name = nullable_htmlentities($row['vendor_name'] ?? "Expense Disabled");
                     $category = nullable_htmlentities($row['category_name']);
                     $percent_fee = floatval($row['payment_provider_expense_percentage_fee']) * 100;
                     $flat_fee = floatval($row['payment_provider_expense_flat_fee']);
@@ -94,7 +94,9 @@ $num_rows = mysqli_num_rows($sql);
                         <td><?php echo $vendor_name; ?></td>
                         <td><?php echo $category; ?></td>
                         <td><?php echo $percent_fee; ?>% + <?php echo numfmt_format_currency($currency_format, $flat_fee, $session_company_currency); ?></td>
-                        <td><?php echo $saved_payment_count; ?></td>
+                        <td class="text-center">
+                            <a class="badge badge-dark badge-pill p-2" href="saved_payment_method.php"><?= $saved_payment_count ?></a>
+                        </td>
                         <td>
                             <div class="dropdown dropleft text-center">
                                 <button class="btn btn-secondary btn-sm" type="button" data-toggle="dropdown">

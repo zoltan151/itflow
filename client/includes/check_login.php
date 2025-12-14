@@ -16,13 +16,13 @@ if (!isset($_SESSION)) {
 }
 
 if (!isset($_SESSION['client_logged_in']) || !$_SESSION['client_logged_in']) {
-    header("Location: /client/login.php");
+    header("Location: /login.php");
     die;
 }
 
 // Check user type
 if ($_SESSION['user_type'] !== 2) {
-    header("Location: /client/login.php");
+    header("Location: /login.php");
     exit();
 }
 

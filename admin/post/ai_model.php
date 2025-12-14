@@ -49,7 +49,7 @@ if (isset($_POST['edit_ai_model'])) {
 if (isset($_GET['delete_ai_model'])) {
 
     validateCSRFToken($_GET['csrf_token']);
-    
+
     $model_id = intval($_GET['delete_ai_model']);
 
     $model_name = sanitizeInput(getFieldById('ai_models', $model_id, 'ai_model_name'));

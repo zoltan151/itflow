@@ -57,11 +57,12 @@ require_once "includes/inc_all_admin.php";
                 <hr>
 
                 <button type="submit" name="edit_favicon_settings" class="btn btn-primary text-bold"><i class="fa fa-check mr-2"></i>Upload Icon</button>
-
+                <?php if(file_exists("../uploads/favicon.ico")) { ?>
+                <a href="post.php?reset_favicon" class="btn btn-outline-danger"><i class="fas fa-redo-alt mr-2"></i>Reset Favicon</a>
+                <?php } ?>
             </form>
         </div>
     </div>
 
 <?php
 require_once "../includes/footer.php";
-

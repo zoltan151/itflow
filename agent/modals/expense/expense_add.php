@@ -152,8 +152,6 @@ ob_start();
                         </button>
                     </div>
                 </div>
-
-
             </div>
 
             <?php if ($client_id) { ?>

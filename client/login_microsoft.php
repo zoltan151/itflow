@@ -133,20 +133,20 @@ if (isset($_POST['code']) && $_POST['state'] == session_id()) {
                 header("Location: index.php");
 
             } else {
-                
+
                 $_SESSION['login_message'] = 'Something went wrong with logging you in: Your account is not configured for Entra SSO. Please ensure you are setup in ITFlow as a contact and have Entra SSO configured.';
-                
+
                 header("Location: index.php");
             }
-        
+
         }
-        
+
         header('Location: index.php');
-    
+
     } else {
-        
+
         echo "Error getting access_token";
-    
+
     }
 
 }

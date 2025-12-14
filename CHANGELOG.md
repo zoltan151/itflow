@@ -2,6 +2,21 @@
 
 This file documents all notable changes made to ITFlow.
 
+## [25.12.1] Maint Release
+
+### Major Changes
+- Unified the Client/Agent Login and process (Note only Client Users can Reset passwords from the login page, does not apply to agent users).
+
+### Bug Fixes
+- Fix Payment Provider not adding an account.
+- Fix New ticket button in contact details in the related tickets section.
+
+### New Features & Updates
+- You can now Set Payment Provider income/expense account, expense vendor and expense category upond creation or editing.
+- Moved Saved Payment Provider Methods away from admin side nav to the count link within Payment Providers page.
+- Moved AI Models from the admin side nav to the model count link within AI Providers.
+- Add Favicon Reset.
+
 ## [25.12] Stable Release
 
 ### Breaking Changes ###
@@ -319,7 +334,7 @@ We will provide example code with directory structure for each custom directory 
 ---
 
 ### Fixed
-- Several security vulnerabilities patched.
+- Several security vulnerabilities patched (with thanks to www.helx.io).
 - Ticket status is no longer updated when scheduling.
 - Client Portal: Tech contacts can no longer edit their own details.
 - Fixed overlapping logo issue in Invoice/Quote PDF exports.

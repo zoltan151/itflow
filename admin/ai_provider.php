@@ -39,7 +39,7 @@ $num_rows = mysqli_num_rows($sql);
                             Key <?php if ($sort == 'ai_provider_api_key') { echo $order_icon; } ?>
                         </a>
                     </th>
-                    <th>
+                    <th class="text-center">
                         <a class="text-dark">Models</a>
                     </th>
                     <th class="text-center">Action</th>
@@ -67,7 +67,8 @@ $num_rows = mysqli_num_rows($sql);
                         </td>
                         <td><?php echo $url; ?></td>
                         <td><?php echo $key; ?></td>
-                        <td><?php echo $ai_model_count; ?></td>
+                        <td class="text-center">
+                            <a class="badge badge-dark badge-pill p-2" href="ai_model.php"><?= $ai_model_count ?></a>
                         <td>
                             <div class="dropdown dropleft text-center">
                                 <button class="btn btn-secondary btn-sm" type="button" data-toggle="dropdown">

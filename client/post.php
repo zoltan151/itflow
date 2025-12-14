@@ -320,7 +320,7 @@ if (isset($_GET['logout'])) {
     session_unset();
     session_destroy();
 
-    redirect('login.php');
+    redirect('/login.php');
 
 }
 
