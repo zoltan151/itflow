@@ -2,6 +2,9 @@
 /*
  * CRON - Email Parser (Webklex PHP-IMAP)
  * Process emails and create/update tickets using Webklex\PHPIMAP instead of native IMAP
+ *
+ * Patch: Prefer real sender using Reply-To / X-Original-* headers before From
+ * (No hard-blocking of internal addresses, per request.)
  */
 
 // Start the timer
@@ -497,6 +500,72 @@ if ($imap_provider === '') {
 }
 
 /** ------------------------------------------------------------------
+ * Sender resolution helpers (Reply-To first)
+ * ------------------------------------------------------------------ */
+
+function extractFirstEmailFromHeaderLine(string $rawHeaders, string $headerName): ?string {
+    // Match header line (including folded continuation lines)
+    $pattern = '/^' . preg_quote($headerName, '/') . ':\s*(.+(?:\r?\n[ \t].+)*)$/im';
+    if (!preg_match($pattern, $rawHeaders, $m)) return null;
+
+    // Unfold
+    $val = preg_replace("/\r?\n[ \t]+/", " ", $m[1]);
+
+    // Extract first email-like token
+    if (preg_match('/([a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,})/i', $val, $e)) {
+        return strtolower(trim($e[1]));
+    }
+    return null;
+}
+
+function pickSenderEmailFromWebklex($addressCollection): ?string {
+    if (!$addressCollection || !method_exists($addressCollection, 'count') || $addressCollection->count() < 1) return null;
+    $first = $addressCollection->first();
+    if (!$first) return null;
+    $mail = $first->mail ?? null;
+    if (!$mail) return null;
+    return strtolower(trim($mail));
+}
+
+function resolveRealSenderEmail($message): ?string {
+    $raw = '';
+    try {
+        $raw = (string)($message->getHeader()->raw ?? '');
+    } catch (\Throwable $e) {
+        $raw = '';
+    }
+
+    // 1) Reply-To via Webklex
+    $replyTo = null;
+    if (method_exists($message, 'getReplyTo')) {
+        $replyTo = pickSenderEmailFromWebklex($message->getReplyTo());
+    }
+    if (!empty($replyTo)) return $replyTo;
+
+    // 1b) Reply-To via raw headers
+    $replyToRaw = $raw ? extractFirstEmailFromHeaderLine($raw, 'Reply-To') : null;
+    if (!empty($replyToRaw)) return $replyToRaw;
+
+    // 2) Common "original sender" headers (mailing lists / gateways)
+    if ($raw) {
+        foreach (['X-Original-From', 'X-Original-Sender', 'X-Original-Reply-To'] as $h) {
+            $v = extractFirstEmailFromHeaderLine($raw, $h);
+            if (!empty($v)) return $v;
+        }
+    }
+
+    // 3) From via Webklex
+    $from = pickSenderEmailFromWebklex($message->getFrom());
+    if (!empty($from)) return $from;
+
+    // 4) From via raw header (last fallback)
+    $fromRaw = $raw ? extractFirstEmailFromHeaderLine($raw, 'From') : null;
+    if (!empty($fromRaw)) return $fromRaw;
+
+    return null;
+}
+
+/** ------------------------------------------------------------------
  * Webklex IMAP setup (supports Standard / Google OAuth / Microsoft OAuth)
  * ------------------------------------------------------------------ */
 use Webklex\PHPIMAP\ClientManager;
@@ -590,11 +659,16 @@ foreach ($messages as $message) {
     $raw_message = (string)$message->getHeader()->raw . "\r\n\r\n" . ($message->getRawBody() ?? $message->getHTMLBody() ?? $message->getTextBody());
     file_put_contents("../uploads/tmp/{$original_message_file}", $raw_message);
 
-    // From
+    // From (prefer Reply-To/original headers when available)
     $fromCol    = $message->getFrom();
     $fromFirst  = ($fromCol && $fromCol->count()) ? $fromCol->first() : null;
-    $from_email = sanitizeInput($fromFirst->mail ?? 'itflow-guest@example.com');
+
+    // Display name from From: header (usually still correct even when address gets rewritten)
     $from_name  = sanitizeInput($fromFirst->personal ?? 'Unknown');
+
+    // Real sender email selection:
+    $resolved_sender = resolveRealSenderEmail($message);
+    $from_email = sanitizeInput($resolved_sender ?: ($fromFirst->mail ?? 'itflow-guest@example.com'));
 
     $from_domain = explode("@", $from_email);
     $from_domain = sanitizeInput(end($from_domain));
@@ -736,7 +810,6 @@ foreach ($messages as $message) {
             $email_processed = addTicket(0, $from_name, $from_email, 0, $date, $subject, $message_body, $attachments, $original_message_file);
         }
     }
-
 
     // Flag/move based on processing result
     if ($email_processed) {
