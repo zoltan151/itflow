@@ -4,7 +4,7 @@
  * Process emails and create/update tickets using Webklex\PHPIMAP instead of native IMAP
  *
  * Patch: Prefer real sender using Reply-To / X-Original-* headers before From
- * (No hard-blocking of internal addresses, per request.)
+ * Patch: Normalize sender display name to strip " via <Group>" suffix (e.g., Google Groups)
  */
 
 // Start the timer
@@ -500,7 +500,7 @@ if ($imap_provider === '') {
 }
 
 /** ------------------------------------------------------------------
- * Sender resolution helpers (Reply-To first)
+ * Sender resolution helpers (Reply-To first + name normalization)
  * ------------------------------------------------------------------ */
 
 function extractFirstEmailFromHeaderLine(string $rawHeaders, string $headerName): ?string {
@@ -525,6 +525,36 @@ function pickSenderEmailFromWebklex($addressCollection): ?string {
     $mail = $first->mail ?? null;
     if (!$mail) return null;
     return strtolower(trim($mail));
+}
+
+function pickSenderNameFromWebklex($addressCollection): ?string {
+    if (!$addressCollection || !method_exists($addressCollection, 'count') || $addressCollection->count() < 1) return null;
+    $first = $addressCollection->first();
+    if (!$first) return null;
+    $personal = $first->personal ?? null;
+    if (!$personal) return null;
+    return trim((string)$personal);
+}
+
+function normalizeDisplayName(?string $name): string {
+    $name = (string)$name;
+    $name = trim($name);
+
+    if ($name === '') return 'Unknown';
+
+    // Remove common Gmail/mailing-list pattern: "Name via Group"
+    // Only strips a trailing " via X"
+    $name = preg_replace('/\s+via\s+.+$/i', '', $name);
+
+    // Collapse excess whitespace
+    $name = preg_replace('/\s+/', ' ', $name);
+
+    // Strip surrounding quotes
+    $name = trim($name, "\"' \t\n\r\0\x0B");
+
+    if ($name === '') return 'Unknown';
+
+    return $name;
 }
 
 function resolveRealSenderEmail($message): ?string {
@@ -561,6 +591,20 @@ function resolveRealSenderEmail($message): ?string {
     // 4) From via raw header (last fallback)
     $fromRaw = $raw ? extractFirstEmailFromHeaderLine($raw, 'From') : null;
     if (!empty($fromRaw)) return $fromRaw;
+
+    return null;
+}
+
+function resolveRealSenderName($message): ?string {
+    // 1) Reply-To personal name (best for “via” cases)
+    if (method_exists($message, 'getReplyTo')) {
+        $rt = pickSenderNameFromWebklex($message->getReplyTo());
+        if (!empty($rt)) return $rt;
+    }
+
+    // 2) From personal name
+    $f = pickSenderNameFromWebklex($message->getFrom());
+    if (!empty($f)) return $f;
 
     return null;
 }
@@ -659,16 +703,17 @@ foreach ($messages as $message) {
     $raw_message = (string)$message->getHeader()->raw . "\r\n\r\n" . ($message->getRawBody() ?? $message->getHTMLBody() ?? $message->getTextBody());
     file_put_contents("../uploads/tmp/{$original_message_file}", $raw_message);
 
-    // From (prefer Reply-To/original headers when available)
+    // From / Reply-To (prefer Reply-To/original headers when available)
     $fromCol    = $message->getFrom();
     $fromFirst  = ($fromCol && $fromCol->count()) ? $fromCol->first() : null;
-
-    // Display name from From: header (usually still correct even when address gets rewritten)
-    $from_name  = sanitizeInput($fromFirst->personal ?? 'Unknown');
 
     // Real sender email selection:
     $resolved_sender = resolveRealSenderEmail($message);
     $from_email = sanitizeInput($resolved_sender ?: ($fromFirst->mail ?? 'itflow-guest@example.com'));
+
+    // Real sender name selection + normalization
+    $resolved_name = resolveRealSenderName($message);
+    $from_name = sanitizeInput(normalizeDisplayName($resolved_name ?: ($fromFirst->personal ?? 'Unknown')));
 
     $from_domain = explode("@", $from_email);
     $from_domain = sanitizeInput(end($from_domain));
