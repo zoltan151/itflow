@@ -3,8 +3,11 @@
  * CRON - Email Parser (Webklex PHP-IMAP)
  * Process emails and create/update tickets using Webklex\PHPIMAP instead of native IMAP
  *
- * Patch: Prefer real sender using Reply-To / X-Original-* headers before From
- * Patch: Normalize sender display name to strip " via <Group>" suffix (e.g., Google Groups)
+ * Fix 1: Prefer real sender using Reply-To / X-Original-* headers before From
+ * Fix 2: Normalize sender display name to strip " via <Group>" suffix (e.g., Google Groups)
+ * Phase 1 (Reply-All semantics): Collect thread participants (From/Reply-To/To/Cc) and
+ *                               add them as ticket watchers + send ticket-created auto-reply
+ *                               to those additional participants as separate emails.
  */
 
 // Start the timer
@@ -74,9 +77,9 @@ register_shutdown_function(function() use ($lock_file_path) {
 $allowed_extensions = array('jpg', 'jpeg', 'gif', 'png', 'webp', 'pdf', 'txt', 'md', 'doc', 'docx', 'csv', 'xls', 'xlsx', 'xlsm', 'zip', 'tar', 'gz');
 
 /** ------------------------------------------------------------------
- * Ticket / Reply helpers (unchanged)
+ * Ticket / Reply helpers
  * ------------------------------------------------------------------ */
-function addTicket($contact_id, $contact_name, $contact_email, $client_id, $date, $subject, $message, $attachments, $original_message_file) {
+function addTicket($contact_id, $contact_name, $contact_email, $client_id, $date, $subject, $message, $attachments, $original_message_file, array $participants = []) {
     global $mysqli, $config_app_name, $company_name, $company_phone, $config_ticket_prefix, $config_ticket_client_general_notifications, $config_ticket_new_ticket_notification_email, $config_base_url, $config_ticket_from_name, $config_ticket_from_email, $config_ticket_default_billable, $allowed_extensions;
 
     // Atomically increment and get the new ticket number
@@ -148,23 +151,69 @@ function addTicket($contact_id, $contact_name, $contact_email, $client_id, $date
         }
     }
 
-    // Guest ticket watchers
+    // Ticket watchers:
+    // - For guest tickets, existing behavior adds requester as watcher
+    // - Phase 1: also add any other conversation participants as watchers
     if ($client_id == 0) {
         mysqli_query($mysqli, "INSERT INTO ticket_watchers SET watcher_email = '$contact_email_esc', watcher_ticket_id = $id");
+    }
+
+    if (!empty($participants)) {
+        foreach ($participants as $p) {
+            $p = strtolower(trim((string)$p));
+            if ($p === '') continue;
+            if (!filter_var($p, FILTER_VALIDATE_EMAIL)) continue;
+
+            $p_esc = mysqli_real_escape_string($mysqli, $p);
+            // Use INSERT IGNORE so duplicates don't blow up if there's a unique constraint
+            @mysqli_query($mysqli, "INSERT IGNORE INTO ticket_watchers SET watcher_email = '$p_esc', watcher_ticket_id = $id");
+        }
     }
 
     $data = [];
     if ($config_ticket_client_general_notifications == 1) {
         $subject_email = "Ticket created - [$config_ticket_prefix$ticket_number] - $subject";
+
+        // Main requester email (To:)
         $body = "<i style='color: #808080'>##- Please type your reply above this line -##</i><br><br>Hello $contact_name,<br><br>Thank you for your email. A ticket regarding \"$subject\" has been automatically created for you.<br><br>Ticket: $config_ticket_prefix$ticket_number<br>Subject: $subject<br>Status: New<br>Portal: <a href='https://$config_base_url/guest/guest_view_ticket.php?ticket_id=$id&url_key=$url_key'>View ticket</a><br><br>--<br>$company_name - Support<br>$config_ticket_from_email<br>$company_phone";
+        $body_esc = mysqli_real_escape_string($mysqli, $body);
+
         $data[] = [
             'from' => $config_ticket_from_email,
             'from_name' => $config_ticket_from_name,
             'recipient' => $contact_email,
             'recipient_name' => $contact_name,
             'subject' => $subject_email,
-            'body' => mysqli_real_escape_string($mysqli, $body)
+            'body' => $body_esc
         ];
+
+        // Phase 1 "Reply-All semantics": notify other participants as separate emails
+        if (!empty($participants)) {
+            // Build a generic body (avoid greeting “via …” or wrong personal names)
+            $body_participant = "<i style='color: #808080'>##- Please type your reply above this line -##</i><br><br>Hello,<br><br>This is a confirmation that a support ticket regarding \"$subject\" has been created.<br><br>Ticket: $config_ticket_prefix$ticket_number<br>Subject: $subject<br>Status: New<br><br>--<br>$company_name - Support<br>$config_ticket_from_email<br>$company_phone";
+            $body_participant_esc = mysqli_real_escape_string($mysqli, $body_participant);
+
+            $seen = [];
+            $contact_email_lc = strtolower(trim($contact_email));
+            foreach ($participants as $p) {
+                $p = strtolower(trim((string)$p));
+                if ($p === '' || !filter_var($p, FILTER_VALIDATE_EMAIL)) continue;
+
+                // Avoid sending duplicate emails, and avoid re-sending to the main requester
+                if ($p === $contact_email_lc) continue;
+                if (!empty($seen[$p])) continue;
+                $seen[$p] = true;
+
+                $data[] = [
+                    'from' => $config_ticket_from_email,
+                    'from_name' => $config_ticket_from_name,
+                    'recipient' => $p,
+                    'recipient_name' => $p,
+                    'subject' => $subject_email,
+                    'body' => $body_participant_esc
+                ];
+            }
+        }
     }
 
     if ($config_ticket_new_ticket_notification_email) {
@@ -500,7 +549,7 @@ if ($imap_provider === '') {
 }
 
 /** ------------------------------------------------------------------
- * Sender resolution helpers (Reply-To first + name normalization)
+ * Sender + participant helpers (Reply-To first + name normalization)
  * ------------------------------------------------------------------ */
 
 function extractFirstEmailFromHeaderLine(string $rawHeaders, string $headerName): ?string {
@@ -516,6 +565,22 @@ function extractFirstEmailFromHeaderLine(string $rawHeaders, string $headerName)
         return strtolower(trim($e[1]));
     }
     return null;
+}
+
+function extractAllEmailsFromHeaderLine(string $rawHeaders, string $headerName): array {
+    $pattern = '/^' . preg_quote($headerName, '/') . ':\s*(.+(?:\r?\n[ \t].+)*)$/im';
+    if (!preg_match($pattern, $rawHeaders, $m)) return [];
+
+    $val = preg_replace("/\r?\n[ \t]+/", " ", $m[1]);
+
+    if (!preg_match_all('/([a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,})/i', $val, $mm)) return [];
+
+    $out = [];
+    foreach ($mm[1] as $e) {
+        $e = strtolower(trim($e));
+        if ($e !== '' && filter_var($e, FILTER_VALIDATE_EMAIL)) $out[$e] = true;
+    }
+    return array_keys($out);
 }
 
 function pickSenderEmailFromWebklex($addressCollection): ?string {
@@ -607,6 +672,45 @@ function resolveRealSenderName($message): ?string {
     if (!empty($f)) return $f;
 
     return null;
+}
+
+function collectParticipants($message): array {
+    $emails = [];
+
+    $raw = '';
+    try {
+        $raw = (string)($message->getHeader()->raw ?? '');
+    } catch (\Throwable $e) {
+        $raw = '';
+    }
+
+    // Webklex sources
+    $cols = [];
+    if (method_exists($message, 'getFrom'))    $cols[] = $message->getFrom();
+    if (method_exists($message, 'getReplyTo')) $cols[] = $message->getReplyTo();
+    if (method_exists($message, 'getTo'))      $cols[] = $message->getTo();
+    if (method_exists($message, 'getCc'))      $cols[] = $message->getCc();
+
+    foreach ($cols as $col) {
+        if (!$col || !method_exists($col, 'all')) continue;
+        foreach ($col->all() as $addr) {
+            $mail = strtolower(trim($addr->mail ?? ''));
+            if ($mail !== '' && filter_var($mail, FILTER_VALIDATE_EMAIL)) {
+                $emails[$mail] = true;
+            }
+        }
+    }
+
+    // Raw fallback for To/Cc/Reply-To (captures edge cases/folding)
+    if ($raw) {
+        foreach (['To', 'Cc', 'Reply-To'] as $h) {
+            foreach (extractAllEmailsFromHeaderLine($raw, $h) as $e) {
+                $emails[$e] = true;
+            }
+        }
+    }
+
+    return array_keys($emails);
 }
 
 /** ------------------------------------------------------------------
@@ -718,6 +822,22 @@ foreach ($messages as $message) {
     $from_domain = explode("@", $from_email);
     $from_domain = sanitizeInput(end($from_domain));
 
+    // Phase 1: gather thread participants (for watcher + "reply-all semantics")
+    $participants = collectParticipants($message);
+
+    // Remove requester (we already email them directly), and remove the support "from" address to avoid self-notify loops.
+    $participants_filtered = [];
+    $from_email_lc = strtolower(trim($from_email));
+    $support_from_lc = strtolower(trim((string)$config_ticket_from_email));
+    foreach ($participants as $p) {
+        $p = strtolower(trim((string)$p));
+        if ($p === '' || !filter_var($p, FILTER_VALIDATE_EMAIL)) continue;
+        if ($p === $from_email_lc) continue;
+        if ($support_from_lc !== '' && $p === $support_from_lc) continue;
+        $participants_filtered[] = $p;
+    }
+    $participants = array_values(array_unique($participants_filtered));
+
     // Subject
     $subject = sanitizeInput((string)$message->getSubject() ?: 'No Subject');
 
@@ -822,7 +942,7 @@ foreach ($messages as $message) {
             $contact_email = sanitizeInput($rowc['contact_email']);
             $client_id     = intval($rowc['contact_client_id']);
 
-            $email_processed = addTicket($contact_id, $contact_name, $contact_email, $client_id, $date, $subject, $message_body, $attachments, $original_message_file);
+            $email_processed = addTicket($contact_id, $contact_name, $contact_email, $client_id, $date, $subject, $message_body, $attachments, $original_message_file, $participants);
         }
     }
 
@@ -844,7 +964,7 @@ foreach ($messages as $message) {
             logAction("Contact", "Create", "Email parser: created contact " . mysqli_real_escape_string($mysqli, $contact_name), $client_id, $contact_id);
             customAction('contact_create', $contact_id);
 
-            $email_processed = addTicket($contact_id, $contact_name, $contact_email, $client_id, $date, $subject, $message_body, $attachments, $original_message_file);
+            $email_processed = addTicket($contact_id, $contact_name, $contact_email, $client_id, $date, $subject, $message_body, $attachments, $original_message_file, $participants);
         }
     }
 
@@ -852,7 +972,7 @@ foreach ($messages as $message) {
     if (!$email_processed && $config_ticket_email_parse_unknown_senders) {
         $bad_from_pattern = "/daemon|postmaster/i";
         if (!preg_match($bad_from_pattern, $from_email)) {
-            $email_processed = addTicket(0, $from_name, $from_email, 0, $date, $subject, $message_body, $attachments, $original_message_file);
+            $email_processed = addTicket(0, $from_name, $from_email, 0, $date, $subject, $message_body, $attachments, $original_message_file, $participants);
         }
     }
 
