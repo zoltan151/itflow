@@ -1603,7 +1603,8 @@ foreach ($messages as $message) {
         $email_processed = addReply($from_email, $date, $subject, $ticket_number, $message_body, $attachments);
     }
 
-    // Avoid creating tickets from internal reply-all responses to messages the parser already rejected.
+    // Prevent internal reply-all responses from creating tickets only when the
+    // thread references a message that was previously ignored by the parser.
     // Forwards and explicit override tokens still create tickets.
     if (!$email_processed && $is_internal_sender && !$force_ticket && !$is_forwarded_message && parserReferencesIgnoredThread($inbound_relation_headers)) {
         logApp("Cron-Email-Parser", "info", "Skipped internal reply-all from $from_email because it references a previously ignored unknown-sender thread. Subject: $subject");
@@ -1865,6 +1866,9 @@ foreach ($messages as $message) {
             );
         }
     } else {
+        // Only record ignored-thread metadata when the message was not processed.
+        // If unknown-sender ticket creation is enabled, unknown messages are processed
+        // normally and are not added to the ignored-thread cache.
         if (!$is_internal_sender && !$force_ticket && $current_message_id !== '') {
             parserRecordIgnoredThread($current_message_id, $from_email, $subject);
             logApp("Cron-Email-Parser", "info", "Recorded ignored unknown/unprocessed email thread $current_message_id from $from_email. Subject: $subject");
