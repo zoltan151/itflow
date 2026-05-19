@@ -208,6 +208,355 @@ function resolveMailOauthAccessToken(string $provider, string $oauth_client_id, 
     return $tokens['access_token'];
 }
 
+
+function normalizeQueueEmailAddress($value): string {
+    $value = trim((string)$value);
+    if ($value === '') {
+        return '';
+    }
+
+    if (preg_match('/<([^<>]+)>/', $value, $match)) {
+        $value = $match[1];
+    }
+
+    $value = strtolower(trim($value, " \t\n\r\0\x0B<>\"'.,;"));
+    return filter_var($value, FILTER_VALIDATE_EMAIL) ? $value : '';
+}
+
+function normalizeQueueEmailList($value): array {
+    $items = [];
+
+    if (is_string($value)) {
+        if (preg_match_all('/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/i', $value, $matches)) {
+            $items = $matches[0];
+        }
+    } elseif (is_array($value)) {
+        foreach ($value as $item) {
+            if (is_array($item)) {
+                $item = $item['email'] ?? $item['mail'] ?? '';
+            }
+            $items[] = $item;
+        }
+    }
+
+    $out = [];
+    foreach ($items as $item) {
+        $email = normalizeQueueEmailAddress($item);
+        if ($email !== '') {
+            $out[$email] = true;
+        }
+    }
+
+    return array_keys($out);
+}
+
+function sanitizeQueueHeaderValue($value): string {
+    $value = trim((string)$value);
+    $value = str_replace(["\r", "\n"], '', $value);
+    return substr($value, 0, 998);
+}
+
+function extractItFlowMailMetaFromBody(string $html_body): array {
+    $meta = [
+        'body' => $html_body,
+        'cc' => [],
+        'reply_to' => '',
+        'in_reply_to' => '',
+        'references' => '',
+    ];
+
+    if (preg_match('/^\s*<!--\s*ITFLOW_MAIL_META:([A-Za-z0-9+\/]+=*)\s*-->\s*/', $html_body, $match)) {
+        $decoded = base64_decode($match[1], true);
+        $json = is_string($decoded) ? json_decode($decoded, true) : null;
+
+        if (is_array($json)) {
+            $meta['cc'] = normalizeQueueEmailList($json['cc'] ?? []);
+            $meta['reply_to'] = normalizeQueueEmailAddress($json['reply_to'] ?? '');
+            $meta['in_reply_to'] = sanitizeQueueHeaderValue($json['in_reply_to'] ?? '');
+            $meta['references'] = sanitizeQueueHeaderValue($json['references'] ?? '');
+        }
+
+        $meta['body'] = preg_replace('/^\s*<!--\s*ITFLOW_MAIL_META:[A-Za-z0-9+\/]+=*\s*-->\s*/', '', $html_body, 1);
+    }
+
+    return $meta;
+}
+
+
+function queueTableColumnExists(string $table, string $column): bool {
+    global $mysqli;
+    static $cache = [];
+
+    $table_key = preg_replace('/[^A-Za-z0-9_]/', '', $table);
+    $column_key = preg_replace('/[^A-Za-z0-9_]/', '', $column);
+    $key = $table_key . '.' . $column_key;
+
+    if (isset($cache[$key])) {
+        return $cache[$key];
+    }
+
+    if ($table_key === '' || $column_key === '') {
+        $cache[$key] = false;
+        return false;
+    }
+
+    $column_esc = mysqli_real_escape_string($mysqli, $column_key);
+    $result = mysqli_query($mysqli, "SHOW COLUMNS FROM `$table_key` LIKE '$column_esc'");
+    $cache[$key] = ($result && mysqli_num_rows($result) > 0);
+    return $cache[$key];
+}
+
+function queueFirstExistingColumn(string $table, array $columns): string {
+    foreach ($columns as $column) {
+        if (queueTableColumnExists($table, (string)$column)) {
+            return (string)$column;
+        }
+    }
+    return '';
+}
+
+function queueStripMailMeta(string $html): string {
+    return preg_replace('/^\s*<!--\s*ITFLOW_MAIL_META:[A-Za-z0-9+\/]+=*\s*-->\s*/', '', $html, 1);
+}
+
+function queueScrubTicketHistoryHtml(string $html, bool $strip_reply_separator = true): string {
+    $html = queueStripMailMeta($html);
+    $html = preg_replace('/<\/?(?:html|head|body)[^>]*>/i', '', $html);
+    $html = preg_replace('/<script\b[^>]*>.*?<\/script>/is', '', $html);
+    $html = preg_replace('/<style\b[^>]*>.*?<\/style>/is', '', $html);
+    $html = preg_replace('/<\/?(?:iframe|object|embed|form|input|button|meta|link)[^>]*>/i', '', $html);
+    $html = preg_replace('/\s+on[a-z]+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $html);
+    $html = preg_replace('/\s+(href|src)\s*=\s*("|\')\s*javascript:[^"\']*("|\')/i', '', $html);
+    if ($strip_reply_separator) {
+        // In inbound/client replies, remove ITFlow's reply separator and quoted history below it.
+        $html = preg_replace('/<i[^>]*>##-\s*Please\s+type\s+your\s+reply\s+above\s+this\s+line\s*-##<\/i>.*$/is', '', $html);
+    } else {
+        // For the outbound email currently being sent, keep the body below the separator
+        // so we can detect and exclude the current public reply from the appended history.
+        $html = preg_replace('/<i[^>]*>##-\s*Please\s+type\s+your\s+reply\s+above\s+this\s+line\s*-##<\/i>/is', ' ', $html);
+    }
+    $html = trim($html);
+    return $html;
+}
+
+function queuePlainDigest(string $html, bool $strip_reply_separator = true): string {
+    $html = html_entity_decode(strip_tags(queueScrubTicketHistoryHtml($html, $strip_reply_separator)), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $html = preg_replace('/\s+/', ' ', $html);
+    $html = trim($html);
+    if (strlen($html) > 2500) {
+        $html = substr($html, 0, 2500);
+    }
+    return strtolower($html);
+}
+
+function queueExtractTicketNumberFromSubject(string $subject): int {
+    // Target customer-facing ITFlow replies like: Ticket update - [TKT-318246] - Subject
+    if (stripos($subject, 'Ticket update -') !== 0) {
+        return 0;
+    }
+
+    if (preg_match('/\[[^\]\d]*(\d+)\]/', $subject, $match)) {
+        return intval($match[1]);
+    }
+
+    return 0;
+}
+
+
+/**
+ * For public ticket-update emails, CC ticket watchers so the outbound message
+ * behaves like a normal reply-all thread.
+ */
+function queueBuildTicketWatcherCcsForSubject(string $subject, array $existing_ccs, string $to_email, string $from_email): array {
+    global $mysqli, $config_smtp_username;
+
+    // Only mutate customer-facing agent updates. Parser-created ticket emails carry their
+    // own hidden CC metadata already; internal notifications must not get watcher CCs.
+    $ticket_number = queueExtractTicketNumberFromSubject($subject);
+    if ($ticket_number <= 0) {
+        return normalizeQueueEmailList($existing_ccs);
+    }
+
+    $ticket_number = intval($ticket_number);
+    $ticket_result = mysqli_query($mysqli, "SELECT ticket_id FROM tickets WHERE ticket_number = $ticket_number LIMIT 1");
+    if (!$ticket_result || mysqli_num_rows($ticket_result) === 0) {
+        return normalizeQueueEmailList($existing_ccs);
+    }
+
+    $ticket = mysqli_fetch_assoc($ticket_result);
+    $ticket_id = intval($ticket['ticket_id'] ?? 0);
+    if ($ticket_id <= 0) {
+        return normalizeQueueEmailList($existing_ccs);
+    }
+
+    $exclude = [];
+    foreach ([$to_email, $from_email, $config_smtp_username ?? ''] as $email) {
+        $email = normalizeQueueEmailAddress($email);
+        if ($email !== '') {
+            $exclude[$email] = true;
+        }
+    }
+
+    $bad_pattern = "/do[\W_]*not[\W_]*reply|no[\W_]*reply|daemon|postmaster|bounce|mta/i";
+    $ccs = [];
+    foreach (normalizeQueueEmailList($existing_ccs) as $cc) {
+        if (!isset($exclude[$cc]) && !preg_match($bad_pattern, $cc)) {
+            $ccs[$cc] = true;
+        }
+    }
+
+    $watcher_result = mysqli_query($mysqli, "SELECT watcher_email FROM ticket_watchers WHERE watcher_ticket_id = $ticket_id");
+    if ($watcher_result) {
+        while ($watcher = mysqli_fetch_assoc($watcher_result)) {
+            $cc = normalizeQueueEmailAddress($watcher['watcher_email'] ?? '');
+            if ($cc !== '' && !isset($exclude[$cc]) && !preg_match($bad_pattern, $cc)) {
+                $ccs[$cc] = true;
+            }
+        }
+    }
+
+    return array_keys($ccs);
+}
+
+function queueDefaultReplyToForTicketSubject(string $subject, string $current_reply_to, string $from_email): string {
+    if (normalizeQueueEmailAddress($current_reply_to) !== '') {
+        return normalizeQueueEmailAddress($current_reply_to);
+    }
+
+    if (queueExtractTicketNumberFromSubject($subject) > 0) {
+        return normalizeQueueEmailAddress($from_email);
+    }
+
+    return '';
+}
+
+/**
+ * Build customer-visible conversation history for ticket update emails.
+ * Internal notes are intentionally excluded.
+ */
+function queueBuildTicketConversationHistory(string $subject, string $current_html_body): string {
+    global $mysqli;
+
+    if (stripos($current_html_body, 'ITFLOW_TICKET_HISTORY') !== false) {
+        return '';
+    }
+
+    $ticket_number = queueExtractTicketNumberFromSubject($subject);
+    if ($ticket_number <= 0) {
+        return '';
+    }
+
+    $ticket_number = intval($ticket_number);
+    $ticket_result = mysqli_query($mysqli, "SELECT * FROM tickets WHERE ticket_number = $ticket_number LIMIT 1");
+    if (!$ticket_result || mysqli_num_rows($ticket_result) === 0) {
+        return '';
+    }
+
+    $ticket = mysqli_fetch_assoc($ticket_result);
+    $ticket_id = intval($ticket['ticket_id'] ?? 0);
+    if ($ticket_id <= 0) {
+        return '';
+    }
+
+    $items = [];
+
+    $ticket_details = queueScrubTicketHistoryHtml((string)($ticket['ticket_details'] ?? ''));
+    if ($ticket_details !== '') {
+        $created_label = '';
+        foreach (['ticket_created_at', 'ticket_created', 'created_at'] as $created_col) {
+            if (!empty($ticket[$created_col])) {
+                $created_label = ' - ' . htmlspecialchars((string)$ticket[$created_col], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                break;
+            }
+        }
+        $items[] = [
+            'label' => 'Original request' . $created_label,
+            'body' => $ticket_details,
+        ];
+    }
+
+    $reply_id_col = queueFirstExistingColumn('ticket_replies', ['ticket_reply_id', 'reply_id', 'id']);
+    $reply_body_col = queueFirstExistingColumn('ticket_replies', ['ticket_reply', 'reply']);
+    $reply_type_col = queueFirstExistingColumn('ticket_replies', ['ticket_reply_type', 'reply_type']);
+    $reply_created_col = queueFirstExistingColumn('ticket_replies', ['ticket_reply_created_at', 'ticket_reply_created', 'ticket_reply_at', 'created_at']);
+
+    if ($reply_body_col !== '') {
+        $order_col = $reply_created_col !== '' ? $reply_created_col : ($reply_id_col !== '' ? $reply_id_col : $reply_body_col);
+        $order_col_safe = preg_replace('/[^A-Za-z0-9_]/', '', $order_col);
+
+        $reply_result = mysqli_query($mysqli, "SELECT * FROM ticket_replies WHERE ticket_reply_ticket_id = $ticket_id ORDER BY `$order_col_safe` ASC");
+        if ($reply_result) {
+            // Keep the outbound body below the reply separator for digest matching.
+            // Otherwise the current public reply can appear twice: once as the actual email
+            // content and again inside the generated conversation history.
+            $current_digest = queuePlainDigest($current_html_body, false);
+
+            while ($reply = mysqli_fetch_assoc($reply_result)) {
+                $reply_type = $reply_type_col !== '' ? trim((string)($reply[$reply_type_col] ?? '')) : '';
+                $reply_type_lc = strtolower($reply_type);
+
+                // Do not leak true internal notes. Client/customer replies and agent public replies are safe for the customer-facing thread.
+                if (!in_array($reply_type_lc, ['client', 'public'], true)) {
+                    continue;
+                }
+
+                $reply_body = queueScrubTicketHistoryHtml((string)($reply[$reply_body_col] ?? ''));
+                if ($reply_body === '') {
+                    continue;
+                }
+
+                $reply_digest = queuePlainDigest($reply_body);
+                if ($reply_digest !== '' && $current_digest !== '') {
+                    if (strpos($current_digest, $reply_digest) !== false || strpos($reply_digest, $current_digest) !== false) {
+                        // Avoid immediately quoting the message that is currently being sent.
+                        continue;
+                    }
+                }
+
+                $label = $reply_type !== '' ? $reply_type . ' reply' : 'Reply';
+                if ($reply_created_col !== '' && !empty($reply[$reply_created_col])) {
+                    $label .= ' - ' . (string)$reply[$reply_created_col];
+                }
+
+                $items[] = [
+                    'label' => htmlspecialchars($label, ENT_QUOTES | ENT_HTML5, 'UTF-8'),
+                    'body' => $reply_body,
+                ];
+            }
+        }
+    }
+
+    if (!$items) {
+        return '';
+    }
+
+    // Keep the email from becoming a monster. Newest context first, original request last.
+    $items = array_slice(array_reverse($items), 0, 12);
+
+    $html = "<br><br><div id='ITFLOW_TICKET_HISTORY' style='border-top:1px solid #d9d9d9;margin-top:24px;padding-top:14px;color:#444;font-family:Arial,Helvetica,sans-serif;'>";
+    $html .= "<div style='font-size:13px;font-weight:bold;color:#666;margin-bottom:10px;'>Conversation history</div>";
+
+    foreach ($items as $item) {
+        $label = $item['label'];
+        $body = $item['body'];
+        $html .= "<div style='border-left:3px solid #d9d9d9;margin:12px 0;padding:8px 0 8px 12px;'>";
+        $html .= "<div style='font-size:12px;color:#777;margin-bottom:6px;'>$label</div>";
+        $html .= "<div style='font-size:13px;color:#333;line-height:1.45;'>$body</div>";
+        $html .= "</div>";
+    }
+
+    $html .= "</div>";
+    return $html;
+}
+
+function queueAppendTicketConversationHistoryIfNeeded(string $subject, string $html_body): string {
+    $history = queueBuildTicketConversationHistory($subject, $html_body);
+    if ($history === '') {
+        return $html_body;
+    }
+    return $html_body . $history;
+}
+
 function sendQueueEmail(
     string $provider,
     string $host,
@@ -227,7 +576,11 @@ function sendQueueEmail(
     string $oauth_tenant_id,
     string $oauth_refresh_token,
     string $oauth_access_token,
-    string $oauth_access_token_expires_at
+    string $oauth_access_token_expires_at,
+    array  $cc_emails = [],
+    string $reply_to = '',
+    string $in_reply_to = '',
+    string $references = ''
 ) {
     // Sensible defaults for OAuth providers if fields were left blank
     if ($provider === 'google_oauth') {
@@ -286,9 +639,33 @@ function sendQueueEmail(
         $mail->Password = $password ?: '';
     }
 
-    // Recipients & content
+    // Recipients, thread headers & content
     $mail->setFrom($from_email, $from_name);
     $mail->addAddress($to_email, $to_name);
+
+    $reply_to_clean = normalizeQueueEmailAddress($reply_to);
+    if ($reply_to_clean !== '') {
+        $mail->addReplyTo($reply_to_clean);
+    }
+
+    $to_email_clean = normalizeQueueEmailAddress($to_email);
+    $from_email_clean = normalizeQueueEmailAddress($from_email);
+    foreach (normalizeQueueEmailList($cc_emails) as $cc_email) {
+        if ($cc_email !== $to_email_clean && $cc_email !== $from_email_clean) {
+            $mail->addCC($cc_email);
+        }
+    }
+
+    $in_reply_to_clean = sanitizeQueueHeaderValue($in_reply_to);
+    if ($in_reply_to_clean !== '') {
+        $mail->addCustomHeader('In-Reply-To', $in_reply_to_clean);
+    }
+
+    $references_clean = sanitizeQueueHeaderValue($references);
+    if ($references_clean !== '') {
+        $mail->addCustomHeader('References', $references_clean);
+    }
+
     $mail->isHTML(true);
     $mail->Subject = $subject;
     $mail->Body = $html_body;
@@ -316,6 +693,14 @@ if (mysqli_num_rows($sql_queue) > 0) {
         $email_subject        = $rowq['email_subject'];
         $email_content        = $rowq['email_content'];
         $email_ics_str        = $rowq['email_cal_str'];
+
+        $mail_meta = extractItFlowMailMetaFromBody((string)$email_content);
+        $email_content = $mail_meta['body'];
+        $email_content = queueAppendTicketConversationHistoryIfNeeded((string)$email_subject, (string)$email_content);
+        $email_ccs = queueBuildTicketWatcherCcsForSubject((string)$email_subject, $mail_meta['cc'], (string)$email_recipient, (string)$email_from);
+        $email_reply_to = queueDefaultReplyToForTicketSubject((string)$email_subject, (string)$mail_meta['reply_to'], (string)$email_from);
+        $email_in_reply_to = $mail_meta['in_reply_to'];
+        $email_references = $mail_meta['references'];
 
         // Check sender
         if (!filter_var($email_from, FILTER_VALIDATE_EMAIL)) {
@@ -369,7 +754,11 @@ if (mysqli_num_rows($sql_queue) > 0) {
                 (string)$config_mail_oauth_tenant_id,
                 (string)$config_mail_oauth_refresh_token,
                 (string)$config_mail_oauth_access_token,
-                (string)$config_mail_oauth_access_token_expires_at
+                (string)$config_mail_oauth_access_token_expires_at,
+                (array)$email_ccs,
+                (string)$email_reply_to,
+                (string)$email_in_reply_to,
+                (string)$email_references
             );
 
             mysqli_query($mysqli, "UPDATE email_queue SET email_status = 3, email_sent_at = NOW(), email_attempts = 1 WHERE email_id = $email_id");
@@ -410,6 +799,15 @@ if (mysqli_num_rows($sql_failed_queue) > 0) {
         $email_subject        = $rowf['email_subject'];
         $email_content        = $rowf['email_content'];
         $email_ics_str        = $rowf['email_cal_str'];
+
+        $mail_meta = extractItFlowMailMetaFromBody((string)$email_content);
+        $email_content = $mail_meta['body'];
+        $email_content = queueAppendTicketConversationHistoryIfNeeded((string)$email_subject, (string)$email_content);
+        $email_ccs = queueBuildTicketWatcherCcsForSubject((string)$email_subject, $mail_meta['cc'], (string)$email_recipient, (string)$email_from);
+        $email_reply_to = queueDefaultReplyToForTicketSubject((string)$email_subject, (string)$mail_meta['reply_to'], (string)$email_from);
+        $email_in_reply_to = $mail_meta['in_reply_to'];
+        $email_references = $mail_meta['references'];
+
         $email_attempts       = (int)$rowf['email_attempts'] + 1;
 
         mysqli_query($mysqli, "UPDATE email_queue SET email_status = 1 WHERE email_id = $email_id");
@@ -439,7 +837,11 @@ if (mysqli_num_rows($sql_failed_queue) > 0) {
                 (string)$config_mail_oauth_tenant_id,
                 (string)$config_mail_oauth_refresh_token,
                 (string)$config_mail_oauth_access_token,
-                (string)$config_mail_oauth_access_token_expires_at
+                (string)$config_mail_oauth_access_token_expires_at,
+                (array)$email_ccs,
+                (string)$email_reply_to,
+                (string)$email_in_reply_to,
+                (string)$email_references
             );
 
             mysqli_query($mysqli, "UPDATE email_queue SET email_status = 3, email_sent_at = NOW(), email_attempts = $email_attempts WHERE email_id = $email_id");
