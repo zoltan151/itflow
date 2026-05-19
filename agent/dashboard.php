@@ -43,6 +43,81 @@ $sql_years_select = mysqli_query($mysqli, "
     .chart-h-320 { height: 240px; }
     .chart-h-240 { height: 200px; }
   } */
+
+
+  /* Improve readability of dashboard metric tiles without changing tile colors. */
+  .dashboard-metric-tiles .small-box {
+    position: relative;
+    overflow: hidden;
+    transition: filter 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  }
+
+  .dashboard-metric-tiles .small-box::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(
+        128deg,
+        rgba(15, 23, 42, 0.46) 0%,
+        rgba(15, 23, 42, 0.31) 34%,
+        rgba(15, 23, 42, 0.12) 66%,
+        rgba(15, 23, 42, 0.02) 100%
+      );
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .dashboard-metric-tiles .small-box::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.12);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease-in-out;
+    z-index: 2;
+  }
+
+  .dashboard-metric-tiles .small-box:hover::after {
+    opacity: 1;
+  }
+
+  .dashboard-metric-tiles .small-box:hover {
+    text-decoration: none;
+    box-shadow: 0 0.35rem 0.7rem rgba(0, 0, 0, 0.16);
+  }
+
+  .dashboard-metric-tiles .small-box .inner {
+    position: relative;
+    z-index: 3;
+    padding-top: 18px;
+    padding-bottom: 18px;
+  }
+
+  .dashboard-metric-tiles .small-box h3,
+  .dashboard-metric-tiles .small-box p,
+  .dashboard-metric-tiles .small-box small {
+    color: #ffffff !important;
+    text-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.72),
+      0 2px 4px rgba(0, 0, 0, 0.34),
+      0 0 1px rgba(0, 0, 0, 0.75);
+  }
+
+  .dashboard-metric-tiles .small-box h3 {
+    font-weight: 750;
+  }
+
+  .dashboard-metric-tiles .small-box p,
+  .dashboard-metric-tiles .small-box small {
+    font-weight: 650;
+  }
+
+  .dashboard-metric-tiles .small-box .icon {
+    z-index: 2;
+    color: rgba(0, 0, 0, 0.16);
+  }
 </style>
 
 <div class="card card-body">
@@ -176,7 +251,7 @@ if ($user_config_dashboard_financial_enable == 1) {
 ?>
 <div class="card card-body">
     <!-- Icon Cards-->
-    <div class="row">
+    <div class="row dashboard-metric-tiles">
         <div class="col-lg-4 col-md-6 col-sm-12">
             <!-- small box -->
             <a class="small-box bg-primary" href="payments.php?dtf=<?php echo $year; ?>-01-01&dtt=<?php echo $year; ?>-12-31">
@@ -577,7 +652,6 @@ if ($user_config_dashboard_technical_enable == 1) {
     $sql_assets = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT COUNT(asset_id) AS assets_added FROM assets WHERE YEAR(asset_created_at) = $year"));
     $assets_added = $sql_assets['assets_added'];
 
-    // Active means not archived, not closed, and not in a terminal/resolved status.
     $sql_tickets = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT COUNT(ticket_id) AS active_tickets FROM tickets WHERE ticket_closed_at IS NULL AND ticket_archived_at IS NULL AND ticket_status NOT IN (SELECT ticket_status_id FROM ticket_statuses WHERE ticket_status_name IN ('Resolved', 'Closed'))"));
     $active_tickets = $sql_tickets['active_tickets'];
 
@@ -607,9 +681,9 @@ if ($user_config_dashboard_technical_enable == 1) {
     ");
 ?>
 
-<div class="card card-body">
+<div class="card card-body technical-dashboard-card">
     <!-- Icon Cards-->
-    <div class="row">
+    <div class="row dashboard-metric-tiles technical-dashboard-tiles">
         <div class="col-lg-4 col-6">
             <!-- small box -->
             <a class="small-box bg-secondary" href="clients.php?dtf=<?php echo $year; ?>-01-01&dtt=<?php echo $year; ?>-12-31">
