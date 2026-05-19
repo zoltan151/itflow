@@ -577,10 +577,11 @@ if ($user_config_dashboard_technical_enable == 1) {
     $sql_assets = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT COUNT(asset_id) AS assets_added FROM assets WHERE YEAR(asset_created_at) = $year"));
     $assets_added = $sql_assets['assets_added'];
 
-    $sql_tickets = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT COUNT(ticket_id) AS active_tickets FROM tickets WHERE ticket_closed_at IS NULL"));
+    // Active means not archived, not closed, and not in a terminal/resolved status.
+    $sql_tickets = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT COUNT(ticket_id) AS active_tickets FROM tickets WHERE ticket_closed_at IS NULL AND ticket_archived_at IS NULL AND ticket_status NOT IN (SELECT ticket_status_id FROM ticket_statuses WHERE ticket_status_name IN ('Resolved', 'Closed'))"));
     $active_tickets = $sql_tickets['active_tickets'];
 
-    $sql_your_tickets = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT COUNT(ticket_id) AS your_tickets FROM tickets WHERE ticket_closed_at IS NULL AND ticket_assigned_to = $session_user_id"));
+    $sql_your_tickets = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT COUNT(ticket_id) AS your_tickets FROM tickets WHERE ticket_closed_at IS NULL AND ticket_archived_at IS NULL AND ticket_status NOT IN (SELECT ticket_status_id FROM ticket_statuses WHERE ticket_status_name IN ('Resolved', 'Closed')) AND ticket_assigned_to = $session_user_id"));
     $your_tickets = $sql_your_tickets['your_tickets'];
 
     $sql_domains_expiring = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT COUNT(domain_id) AS expiring_domains FROM domains WHERE domain_expire IS NOT NULL AND domain_expire > CURRENT_DATE AND domain_expire < CURRENT_DATE + INTERVAL 30 DAY AND domain_archived_at IS NULL"));
@@ -596,6 +597,12 @@ if ($user_config_dashboard_technical_enable == 1) {
         LEFT JOIN contacts ON ticket_contact_id = contact_id
         WHERE ticket_assigned_to = $session_user_id
         AND ticket_closed_at IS NULL
+        AND ticket_archived_at IS NULL
+        AND ticket_status NOT IN (
+            SELECT ticket_status_id
+            FROM ticket_statuses
+            WHERE ticket_status_name IN ('Resolved', 'Closed')
+        )
         ORDER BY ticket_number DESC
     ");
 ?>
@@ -608,7 +615,7 @@ if ($user_config_dashboard_technical_enable == 1) {
             <a class="small-box bg-secondary" href="clients.php?dtf=<?php echo $year; ?>-01-01&dtt=<?php echo $year; ?>-12-31">
                 <div class="inner">
                     <h3><?php echo $clients_added; ?></h3>
-                    <p>New Clients</p>
+                    <p>New Clients <small>&nbsp;</small></p>
                 </div>
                 <div class="icon">
                     <i class="fa fa-users"></i>
@@ -621,7 +628,7 @@ if ($user_config_dashboard_technical_enable == 1) {
             <a class="small-box bg-success" href="contacts.php">
                 <div class="inner">
                     <h3><?php echo $contacts_added; ?></h3>
-                    <p>New Contacts</p>
+                    <p>New Contacts <small>&nbsp;</small></p>
                 </div>
                 <div class="icon">
                     <i class="fa fa-user"></i>
@@ -634,7 +641,7 @@ if ($user_config_dashboard_technical_enable == 1) {
             <a class="small-box bg-info" href="assets.php">
                 <div class="inner">
                     <h3><?php echo $assets_added; ?></h3>
-                    <p>New Assets</p>
+                    <p>New Assets <small>&nbsp;</small></p>
                 </div>
                 <div class="icon">
                     <i class="fa fa-desktop"></i>
@@ -647,7 +654,7 @@ if ($user_config_dashboard_technical_enable == 1) {
             <a class="small-box bg-danger" href="tickets.php">
                 <div class="inner">
                     <h3><?php echo $active_tickets; ?></h3>
-                    <p>Active Tickets</p>
+                    <p>Active Tickets <small>&nbsp;</small></p>
                 </div>
                 <div class="icon">
                     <i class="fa fa-ticket-alt"></i>
