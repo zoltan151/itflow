@@ -70,11 +70,54 @@ register_shutdown_function(function() use ($lock_file_path) {
 // Allowed attachment extensions
 $allowed_extensions = array('jpg', 'jpeg', 'gif', 'png', 'webp', 'svg', 'pdf', 'txt', 'md', 'doc', 'docx', 'csv', 'xls', 'xlsx', 'xlsm', 'zip', 'tar', 'gz');
 
+
+/**
+ * Build the visible conversation-history block for the initial ticket-created email.
+ * The original requester and CC'd parties should get the context they originally sent,
+ * but the block is sanitized again because inbound email HTML is untrusted input.
+ */
+function parserBuildInitialConversationHistoryBlock(string $ticket_message_html): string {
+    $html = trim($ticket_message_html);
+
+    if ($html === '') {
+        return '';
+    }
+
+    // Strip document-level and active/dangerous content before echoing the original
+    // request back to the customer and CC'd watchers.
+    $html = preg_replace('/<!DOCTYPE[^>]*>/i', '', $html);
+    $html = preg_replace('/<\/?(html|head|body)[^>]*>/i', '', $html);
+    $html = preg_replace('/<\s*(script|style|iframe|object|embed|form|input|button|select|textarea|link|meta|base)[^>]*>.*?<\s*\/\s*\1\s*>/is', '', $html);
+    $html = preg_replace('/<\s*(script|style|iframe|object|embed|form|input|button|select|textarea|link|meta|base)\b[^>]*\/?\s*>/is', '', $html);
+
+    // Remove inline event handlers and javascript/data URL vectors. This is not a full
+    // HTML sanitizer, but it meaningfully reduces risk while preserving readable context.
+    $html = preg_replace('/\s+on[a-z]+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $html);
+    $html = preg_replace('/\s+(href|src)\s*=\s*("|\')\s*(javascript|data)\s*:[^"\']*("|\')/i', '', $html);
+
+    // Keep the notification email sane. The original .eml is still attached to the ticket
+    // if the full source is needed.
+    if (strlen($html) > 30000) {
+        $html = substr($html, 0, 30000) . "<br><br><i>[Original request truncated in notification email. Open the ticket for the full message.]</i>";
+    }
+
+    if (trim(strip_tags($html)) === '') {
+        return '';
+    }
+
+    return "<hr style='border:0;border-top:1px solid #dddddd;margin:24px 0;'>"
+        . "<div style='font-weight:bold;color:#666666;margin-bottom:10px;'>Conversation history</div>"
+        . "<blockquote style='border-left:3px solid #dddddd;margin:0;padding-left:12px;color:#333333;'>"
+        . "<div style='font-size:12px;color:#777777;margin-bottom:8px;'>Original request</div>"
+        . $html
+        . "</blockquote>";
+}
+
 /** ------------------------------------------------------------------
  * Ticket / Reply helpers (unchanged)
  * ------------------------------------------------------------------ */
-function addTicket($contact_id, $contact_name, $contact_email, $client_id, $date, $subject, $message, $attachments, $original_message_file, $ccs) {
-    global $mysqli, $config_app_name, $company_name, $company_phone, $config_ticket_prefix, $config_ticket_client_general_notifications, $config_ticket_new_ticket_notification_email, $config_base_url, $config_ticket_from_name, $config_ticket_from_email, $config_ticket_default_billable, $allowed_extensions;
+function addTicket($contact_id, $contact_name, $contact_email, $client_id, $date, $subject, $message, $attachments, $original_message_file, $ccs, array $mail_context = []) {
+    global $mysqli, $config_app_name, $company_name, $company_phone, $config_ticket_prefix, $config_ticket_client_general_notifications, $config_ticket_new_ticket_notification_email, $config_base_url, $config_ticket_from_name, $config_ticket_from_email, $config_ticket_default_billable, $allowed_extensions, $config_imap_username, $config_smtp_username, $config_mail_from_email;
     $bad_pattern = "/do[\W_]*not[\W_]*reply|no[\W_]*reply/i"; // Email addresses to ignore
 
     // Atomically increment and get the new ticket number
@@ -108,6 +151,21 @@ function addTicket($contact_id, $contact_name, $contact_email, $client_id, $date
     $client_id = intval($client_id);
 
     $url_key = randomString(32);
+
+    // Build the external CC list for the ticket-created notification. These addresses
+    // are also inserted as watchers below, but the notification should be one outbound
+    // email to the requester with everyone else CC'd, not one isolated email per watcher.
+    $exclude_from_thread = [
+        $contact_email,
+        $config_ticket_from_email ?? '',
+        $config_imap_username ?? '',
+        $config_smtp_username ?? '',
+        $config_mail_from_email ?? '',
+    ];
+    if (!empty($mail_context['exclude_emails']) && is_array($mail_context['exclude_emails'])) {
+        $exclude_from_thread = array_merge($exclude_from_thread, $mail_context['exclude_emails']);
+    }
+    $thread_ccs = parserNormalizeEmailList(is_array($ccs) ? $ccs : [], $exclude_from_thread, $bad_pattern);
 
     mysqli_query($mysqli, "INSERT INTO tickets SET ticket_prefix = '$ticket_prefix_esc', ticket_number = $ticket_number, ticket_source = 'Email', ticket_subject = '$subject', ticket_details = '$message_esc', ticket_priority = 'Low', ticket_status = 1, ticket_billable = $config_ticket_default_billable, ticket_created_by = 0, ticket_contact_id = $contact_id, ticket_url_key = '$url_key', ticket_client_id = $client_id");
     $id = mysqli_insert_id($mysqli);
@@ -152,25 +210,42 @@ function addTicket($contact_id, $contact_name, $contact_email, $client_id, $date
     }
 
     // Add CCs as ticket watchers
-    foreach ($ccs as $cc) {
-        if (filter_var($cc, FILTER_VALIDATE_EMAIL) && !preg_match($bad_pattern, $cc)) {
-            $cc_esc = mysqli_real_escape_string($mysqli, $cc);
-            mysqli_query($mysqli, "INSERT INTO ticket_watchers SET watcher_email = '$cc_esc', watcher_ticket_id = $id");
-        }
+    foreach ($thread_ccs as $cc) {
+        $cc_esc = mysqli_real_escape_string($mysqli, $cc);
+        @mysqli_query($mysqli, "INSERT IGNORE INTO ticket_watchers SET watcher_email = '$cc_esc', watcher_ticket_id = $id");
     }
 
     // External email
     $data = [];
-    if ($config_ticket_client_general_notifications == 1 && !preg_match($bad_pattern, $contact_email)) {
+    if ($config_ticket_client_general_notifications == 1 && empty($mail_context['suppress_customer_notification']) && !preg_match($bad_pattern, $contact_email)) {
         $subject_email = "Ticket created - [$config_ticket_prefix$ticket_number] - $subject";
-        $body = "<i style='color: #808080'>##- Please type your reply above this line -##</i><br><br>Hello $contact_name,<br><br>Thank you for your email. A ticket regarding \"$subject\" has been automatically created for you.<br><br>Ticket: $config_ticket_prefix$ticket_number<br>Subject: $subject<br>Status: New<br>Portal: <a href='https://$config_base_url/guest/guest_view_ticket.php?ticket_id=$id&url_key=$url_key'>View ticket</a><br><br>--<br>$company_name - Support<br>$config_ticket_from_email<br>$company_phone";
+        $initial_conversation_history = parserBuildInitialConversationHistoryBlock($message);
+        $body = "<i style='color: #808080'>##- Please type your reply above this line -##</i><br><br>Hello $contact_name,<br><br>Thank you for your email. A ticket regarding &quot;$subject&quot; has been automatically created for you.<br><br>Ticket: $config_ticket_prefix$ticket_number<br>Subject: $subject<br>Status: New<br>Portal: <a href='https://$config_base_url/guest/guest_view_ticket.php?ticket_id=$id&url_key=$url_key'>View ticket</a>";
+        if ($initial_conversation_history !== '') {
+            $body .= "<br><br>" . $initial_conversation_history;
+        }
+        $body .= "<br><br>--<br>$company_name - Support<br>$config_ticket_from_email<br>$company_phone";
+
+        // Queue metadata is embedded as an HTML comment so CC/reply headers work
+        // without requiring a database migration. mail_queue.php strips it before send.
+        $body = parserEmbedMailQueueMeta($body, [
+            'cc' => $thread_ccs,
+            'reply_to' => $config_ticket_from_email,
+            'in_reply_to' => $mail_context['in_reply_to'] ?? '',
+            'references' => $mail_context['references'] ?? ''
+        ]);
+
         $data[] = [
             'from' => $config_ticket_from_email,
             'from_name' => $config_ticket_from_name,
             'recipient' => $contact_email,
             'recipient_name' => $contact_name,
             'subject' => $subject_email,
-            'body' => mysqli_real_escape_string($mysqli, $body)
+            'body' => mysqli_real_escape_string($mysqli, $body),
+            'cc' => $thread_ccs,
+            'reply_to' => $config_ticket_from_email,
+            'in_reply_to' => $mail_context['in_reply_to'] ?? '',
+            'references' => $mail_context['references'] ?? ''
         ];
     }
 
@@ -185,8 +260,8 @@ function addTicket($contact_id, $contact_name, $contact_email, $client_id, $date
             $client_name = sanitizeInput($client_row['client_name']);
             $client_uri = "&client_id=$client_id";
         }
-        $email_subject = "$config_app_name - New Ticket - $client_name: $subject";
-        $email_body = "Hello, <br><br>This is a notification that a new ticket has been raised in ITFlow. <br>Client: $client_name<br>Priority: Low (email parsed)<br>Link: https://$config_base_url/agent/ticket.php?ticket_id=$id$client_uri <br><br>--------------------------------<br><br><b>$subject</b><br>$message";
+        $email_subject = "$config_app_name - New Ticket - [$config_ticket_prefix$ticket_number] $client_name: $subject";
+        $email_body = "Hello, <br><br>This is a notification that a new ticket has been raised in ITFlow. <br>Client: $client_name<br>Priority: Low (email parsed)<br>Ticket: $config_ticket_prefix$ticket_number<br>Subject: $subject<br>Status: New<br>Link: https://$config_base_url/agent/ticket.php?ticket_id=$id$client_uri <br><br>--------------------------------<br><br><b>$subject</b><br>$message";
 
         $data[] = [
             'from' => $config_ticket_from_email,
@@ -204,8 +279,90 @@ function addTicket($contact_id, $contact_name, $contact_email, $client_id, $date
     return true;
 }
 
+
+function parserIsTicketWatcherEmail(int $ticket_id, string $email): bool {
+    global $mysqli;
+
+    $ticket_id = intval($ticket_id);
+    $email = parserNormalizeEmail($email);
+
+    if ($ticket_id <= 0 || $email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return false;
+    }
+
+    $email_esc = mysqli_real_escape_string($mysqli, $email);
+    $watcher_sql = mysqli_query(
+        $mysqli,
+        "SELECT watcher_email FROM ticket_watchers WHERE watcher_ticket_id = $ticket_id AND LOWER(watcher_email) = '$email_esc' LIMIT 1"
+    );
+
+    return ($watcher_sql && mysqli_num_rows($watcher_sql) > 0);
+}
+
+
+function parserGetTicketStatusIdByName(string $status_name): int {
+    global $mysqli;
+
+    $status_name = trim($status_name);
+    if ($status_name === '') {
+        return 0;
+    }
+
+    $status_name_esc = mysqli_real_escape_string($mysqli, $status_name);
+    $status_sql = mysqli_query(
+        $mysqli,
+        "SELECT ticket_status_id FROM ticket_statuses WHERE ticket_status_name = '$status_name_esc' AND ticket_status_active = 1 LIMIT 1"
+    );
+
+    if ($status_sql && ($status = mysqli_fetch_assoc($status_sql))) {
+        return intval($status['ticket_status_id'] ?? 0);
+    }
+
+    return 0;
+}
+
+function parserResolveReplyTargetStatusId(): int {
+    // Prefer the named Open status so custom status IDs do not break reply handling.
+    $open_id = parserGetTicketStatusIdByName('Open');
+    if ($open_id > 0) {
+        return $open_id;
+    }
+
+    return 2;
+}
+
+function parserResolveClosedStatusId(): int {
+    $closed_id = parserGetTicketStatusIdByName('Closed');
+    return $closed_id > 0 ? $closed_id : 5;
+}
+
+function queueSafeForHelpdeskNotification(string $html): string {
+    $html = trim($html);
+    if ($html === '') {
+        return '';
+    }
+
+    $html = queueStripMailMetaIfPresent($html);
+    $html = preg_replace('/<!DOCTYPE[^>]*>/i', '', $html);
+    $html = preg_replace('/<\/?(?:html|head|body)[^>]*>/i', '', $html);
+    $html = preg_replace('/<\s*(script|style|iframe|object|embed|form|input|button|select|textarea|link|meta|base)[^>]*>.*?<\s*\/\s*\1\s*>/is', '', $html);
+    $html = preg_replace('/<\s*(script|style|iframe|object|embed|form|input|button|select|textarea|link|meta|base)\b[^>]*\/?\s*>/is', '', $html);
+    $html = preg_replace('/\s+on[a-z]+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $html);
+    $html = preg_replace('/\s+(href|src)\s*=\s*("|\')\s*(javascript|data)\s*:[^"\']*("|\')/i', '', $html);
+
+    if (strlen($html) > 30000) {
+        $html = substr($html, 0, 30000) . "<br><br><i>[Reply truncated in notification email. Open the ticket for the full message.]</i>";
+    }
+
+    return $html;
+}
+
+function queueStripMailMetaIfPresent(string $html): string {
+    return preg_replace('/^\s*<!--\s*ITFLOW_MAIL_META:[A-Za-z0-9+\/]+=*\s*-->\s*/', '', $html, 1);
+}
+
 function addReply($from_email, $date, $subject, $ticket_number, $message, $attachments) {
-    global $mysqli, $config_app_name, $company_name, $company_phone, $config_ticket_prefix, $config_base_url, $config_ticket_from_name, $config_ticket_from_email, $allowed_extensions;
+    global $mysqli, $config_app_name, $company_name, $company_phone, $config_ticket_prefix, $config_base_url, $config_ticket_from_name, $config_ticket_from_email, $config_ticket_new_ticket_notification_email, $allowed_extensions;
 
     $ticket_reply_type = 'Client';
     // $message contains the raw HTML body from IMAP
@@ -263,7 +420,7 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
         }
         $client_name = sanitizeInput($row['client_name']);
 
-        if ($ticket_status == 5) {
+        if ($ticket_status == parserResolveClosedStatusId()) {
             $config_ticket_prefix_esc = mysqli_real_escape_string($mysqli, $config_ticket_prefix);
             $ticket_number_esc2 = mysqli_real_escape_string($mysqli, $ticket_number);
 
@@ -287,11 +444,17 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
             return true;
         }
 
-        if (empty($ticket_contact_email) || $ticket_contact_email !== $from_email) {
-            $from_email_esc2 = mysqli_real_escape_string($mysqli, $from_email);
-            $row2 = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT contact_id FROM contacts WHERE contact_email = '$from_email_esc2' AND contact_client_id = $client_id LIMIT 1"));
+        if (empty($ticket_contact_email) || parserNormalizeEmail($ticket_contact_email) !== parserNormalizeEmail($from_email)) {
+            $from_email_esc2 = mysqli_real_escape_string($mysqli, parserNormalizeEmail($from_email));
+            $row2 = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT contact_id FROM contacts WHERE LOWER(contact_email) = '$from_email_esc2' AND contact_client_id = $client_id LIMIT 1"));
             if ($row2) {
                 $ticket_reply_contact = intval($row2['contact_id']);
+                $ticket_reply_type = 'Client';
+            } elseif (parserIsTicketWatcherEmail($ticket_id, $from_email)) {
+                // CC/watchers are valid participants in the customer thread even if they are not the primary ticket contact.
+                // Store their replies as Client-visible, not Internal, so the public conversation history stays complete.
+                $ticket_reply_type = 'Client';
+                $ticket_reply_contact = '0';
             } else {
                 $ticket_reply_type = 'Internal';
                 $ticket_reply_contact = '0';
@@ -355,7 +518,11 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
             }
         }
 
-        mysqli_query($mysqli, "UPDATE tickets SET ticket_status = 2, ticket_resolved_at = NULL WHERE ticket_id = $ticket_id AND ticket_client_id = $client_id LIMIT 1");
+        $reply_target_status_id = parserResolveReplyTargetStatusId();
+
+        if ($ticket_reply_type === 'Client') {
+            mysqli_query($mysqli, "UPDATE tickets SET ticket_status = $reply_target_status_id, ticket_resolved_at = NULL WHERE ticket_id = $ticket_id AND ticket_client_id = $client_id LIMIT 1");
+        }
 
         logAction("Ticket", "Edit", "Email parser: Client contact $from_email_esc updated ticket $config_ticket_prefix$ticket_number_esc ($subject)", $client_id, $ticket_id);
         customAction('ticket_reply_client', $ticket_id);
@@ -363,6 +530,721 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
     } else {
         return false;
     }
+}
+
+
+
+/** ------------------------------------------------------------------
+ * Sender resolver for mailing-list/distribution-list rewrites.
+ * Only overrides From when the delivered sender is a configured local mailbox.
+ * ------------------------------------------------------------------ */
+function parserNormalizeEmail(?string $email): string {
+    $email = strtolower(trim((string)$email));
+    if (stripos($email, 'mailto:') === 0) {
+        $email = substr($email, 7);
+    }
+    return trim($email, " \t\n\r\0\x0B<>\"'.,;");
+}
+
+function parserGetRawHeaderValues(string $raw_headers, string $header_name): array {
+    $unfolded = preg_replace("/\r?\n[ \t]+/", " ", $raw_headers);
+    $values = [];
+    if (preg_match_all('/^' . preg_quote($header_name, '/') . ':\s*(.+)$/mi', $unfolded, $matches)) {
+        foreach ($matches[1] as $value) {
+            $value = trim($value);
+            if ($value !== '') {
+                $values[] = $value;
+            }
+        }
+    }
+    return $values;
+}
+
+function parserDecodeHeaderValue(?string $header_value): string {
+    $decoded = trim((string)$header_value);
+    if ($decoded === '') {
+        return '';
+    }
+
+    if (function_exists('iconv_mime_decode')) {
+        $tmp = @iconv_mime_decode($decoded, ICONV_MIME_DECODE_CONTINUE_ON_ERROR, 'UTF-8');
+        if ($tmp !== false && $tmp !== '') {
+            $decoded = $tmp;
+        }
+    }
+
+    return trim($decoded);
+}
+
+function parserExtractEmailCandidate(?string $header_value, string $source): ?array {
+    $decoded = parserDecodeHeaderValue($header_value);
+    if ($decoded === '') {
+        return null;
+    }
+
+    $email = null;
+    if (preg_match('/<([^<>,;\s]+@[^<>,;\s]+)>/', $decoded, $match)) {
+        $email = parserNormalizeEmail($match[1]);
+    } elseif (preg_match('/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/i', $decoded, $match)) {
+        $email = parserNormalizeEmail($match[0]);
+    }
+
+    if (!$email || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return null;
+    }
+
+    $name = trim(preg_replace('/<[^>]*>/', '', $decoded));
+    $name = trim(str_ireplace($email, '', $name));
+    $name = trim($name, " \t\n\r\0\x0B\"'");
+
+    return [
+        'email' => $email,
+        'name' => $name ?: null,
+        'source' => $source,
+        'raw' => $decoded,
+    ];
+}
+
+function parserAddAddressCandidate(array &$candidates, ?string $email, ?string $name, string $source, ?string $raw = null): void {
+    $email = parserNormalizeEmail($email);
+    if ($email && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $candidates[] = [
+            'email' => $email,
+            'name' => $name ? trim($name) : null,
+            'source' => $source,
+            'raw' => $raw ?: $email,
+        ];
+    }
+}
+
+function parserAddCandidatesFromAddressCollection(array &$candidates, $collection, string $source): void {
+    if (!$collection) {
+        return;
+    }
+
+    try {
+        if (is_object($collection) && method_exists($collection, 'toArray')) {
+            foreach ($collection->toArray() as $address) {
+                if ($address instanceof \Webklex\PHPIMAP\Address || is_object($address)) {
+                    parserAddAddressCandidate($candidates, $address->mail ?? null, $address->personal ?? null, $source);
+                } elseif (is_string($address)) {
+                    $candidate = parserExtractEmailCandidate($address, $source);
+                    if ($candidate) $candidates[] = $candidate;
+                }
+            }
+            return;
+        }
+
+        if (is_object($collection) && method_exists($collection, 'count') && method_exists($collection, 'first') && $collection->count()) {
+            $address = $collection->first();
+            if ($address) {
+                parserAddAddressCandidate($candidates, $address->mail ?? null, $address->personal ?? null, $source);
+            }
+            return;
+        }
+
+        if (is_array($collection) || $collection instanceof \Traversable) {
+            foreach ($collection as $address) {
+                if ($address instanceof \Webklex\PHPIMAP\Address || is_object($address)) {
+                    parserAddAddressCandidate($candidates, $address->mail ?? null, $address->personal ?? null, $source);
+                } elseif (is_string($address)) {
+                    $candidate = parserExtractEmailCandidate($address, $source);
+                    if ($candidate) $candidates[] = $candidate;
+                }
+            }
+        }
+    } catch (\Throwable $e) {
+        // Keep parsing email even if a non-standard header object behaves badly.
+    }
+}
+
+function parserGetReplyToCandidates($message): array {
+    $candidates = [];
+
+    try {
+        if (is_object($message) && method_exists($message, 'getReplyTo')) {
+            parserAddCandidatesFromAddressCollection($candidates, $message->getReplyTo(), 'parsed Reply-To');
+        }
+    } catch (\Throwable $e) {
+        // Fall through to header-object/raw parsing.
+    }
+
+    try {
+        if (isset($message->header->reply_to)) {
+            $reply_to = $message->header->reply_to;
+            if (is_string($reply_to)) {
+                $candidate = parserExtractEmailCandidate($reply_to, 'header Reply-To');
+                if ($candidate) $candidates[] = $candidate;
+            } elseif (is_object($reply_to) && method_exists($reply_to, 'toArray')) {
+                parserAddCandidatesFromAddressCollection($candidates, $reply_to, 'header Reply-To');
+            } else {
+                $candidate = parserExtractEmailCandidate((string)$reply_to, 'header Reply-To');
+                if ($candidate) $candidates[] = $candidate;
+            }
+        }
+    } catch (\Throwable $e) {
+        // Ignore and rely on raw headers.
+    }
+
+    return $candidates;
+}
+
+function parserIsAutomatedAddress(?string $email): bool {
+    $email = parserNormalizeEmail($email);
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return true;
+    }
+    $local_part = strtolower(strtok($email, '@') ?: '');
+    return (bool)preg_match('/^(mailer-daemon|postmaster|bounce|bounces|mta|no-reply|noreply)([+._-]|$)/i', $local_part);
+}
+
+function parserCandidateDebugSummary(array $candidates): string {
+    if (!$candidates) {
+        return 'none';
+    }
+
+    $parts = [];
+    foreach ($candidates as $candidate) {
+        $source = $candidate['source'] ?? 'unknown';
+        $email = $candidate['email'] ?? 'invalid';
+        $parts[] = "$source=$email";
+    }
+    return implode('; ', array_unique($parts));
+}
+
+function parserResolveGroupRewrittenSender($message, string $raw_headers, string $from_email, string $from_name, array $local_addresses): array {
+    $local_addresses = array_values(array_unique(array_filter(array_map('parserNormalizeEmail', $local_addresses))));
+    $from_email_lc = parserNormalizeEmail($from_email);
+
+    // Do not trust Reply-To/X-* globally. Only override when Gmail/Google Groups delivered the message
+    // as one of our configured infrastructure addresses.
+    if (!in_array($from_email_lc, $local_addresses, true)) {
+        return [$from_email, $from_name, null, 'not-local-from'];
+    }
+
+    $candidates = [];
+
+    // Prefer headers intended to preserve original sender identity, then fall back to Reply-To.
+    foreach (['X-Original-Sender', 'X-Original-From', 'X-Google-Original-From', 'Original-From'] as $header_name) {
+        foreach (parserGetRawHeaderValues($raw_headers, $header_name) as $value) {
+            $candidate = parserExtractEmailCandidate($value, $header_name);
+            if ($candidate) $candidates[] = $candidate;
+        }
+    }
+
+    foreach (parserGetReplyToCandidates($message) as $candidate) {
+        $candidates[] = $candidate;
+    }
+
+    foreach (parserGetRawHeaderValues($raw_headers, 'Reply-To') as $value) {
+        $candidate = parserExtractEmailCandidate($value, 'raw Reply-To');
+        if ($candidate) $candidates[] = $candidate;
+    }
+
+    foreach ($candidates as $candidate) {
+        $candidate_email = parserNormalizeEmail($candidate['email'] ?? '');
+        if (!$candidate_email || !filter_var($candidate_email, FILTER_VALIDATE_EMAIL)) {
+            continue;
+        }
+        if (in_array($candidate_email, $local_addresses, true)) {
+            continue;
+        }
+        if (parserIsAutomatedAddress($candidate_email)) {
+            continue;
+        }
+
+        $candidate_name = trim((string)($candidate['name'] ?? ''));
+        if ($candidate_name === '') {
+            // Clean up names like "'Allied IT' via Support" when Google rewrites From.
+            $candidate_name = preg_replace('/\s+via\s+.+$/i', '', $from_name);
+            $candidate_name = trim($candidate_name, " \t\n\r\0\x0B\"'");
+        }
+        if ($candidate_name === '') {
+            $candidate_name = $candidate_email;
+        }
+
+        return [$candidate_email, $candidate_name, $candidate['source'] ?? 'unknown', parserCandidateDebugSummary($candidates)];
+    }
+
+    return [$from_email, $from_name, null, parserCandidateDebugSummary($candidates)];
+}
+
+
+function parserNormalizeEmailList(array $emails, array $exclude = [], ?string $bad_pattern = null): array {
+    $exclude_map = [];
+    foreach ($exclude as $email) {
+        $email = parserNormalizeEmail($email);
+        if ($email !== '') {
+            $exclude_map[$email] = true;
+        }
+    }
+
+    $out = [];
+    foreach ($emails as $email) {
+        if (is_array($email)) {
+            $email = $email['email'] ?? $email['mail'] ?? '';
+        } elseif (is_object($email)) {
+            $email = $email->mail ?? '';
+        }
+
+        $email = parserNormalizeEmail((string)$email);
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            continue;
+        }
+        if (isset($exclude_map[$email])) {
+            continue;
+        }
+        if ($bad_pattern && preg_match($bad_pattern, $email)) {
+            continue;
+        }
+        if (parserIsAutomatedAddress($email)) {
+            continue;
+        }
+        $out[$email] = true;
+    }
+
+    return array_keys($out);
+}
+
+function parserGetRawHeaderFirstValue(string $raw_headers, string $header_name): string {
+    $values = parserGetRawHeaderValues($raw_headers, $header_name);
+    return $values[0] ?? '';
+}
+
+function parserSanitizeMessageId(?string $value): string {
+    $value = parserDecodeHeaderValue($value);
+    if ($value === '') {
+        return '';
+    }
+
+    if (preg_match('/<[^<>\s]+@[^<>\s]+>/', $value, $match)) {
+        return $match[0];
+    }
+
+    return '';
+}
+
+function parserBuildThreadHeaders(string $raw_headers): array {
+    $message_id = parserSanitizeMessageId(parserGetRawHeaderFirstValue($raw_headers, 'Message-ID'));
+    $references_raw = parserDecodeHeaderValue(parserGetRawHeaderFirstValue($raw_headers, 'References'));
+    $references = '';
+
+    if ($references_raw !== '' && preg_match_all('/<[^<>\s]+@[^<>\s]+>/', $references_raw, $matches)) {
+        $references = implode(' ', array_unique($matches[0]));
+    }
+
+    if ($message_id !== '') {
+        if ($references === '') {
+            $references = $message_id;
+        } elseif (strpos($references, $message_id) === false) {
+            $references .= ' ' . $message_id;
+        }
+    }
+
+    return [
+        'in_reply_to' => $message_id,
+        'references' => $references,
+    ];
+}
+
+
+function parserCleanMailQueueHeaderValue(?string $value): string {
+    $value = trim((string)$value);
+    // Prevent header injection if this metadata is ever malformed.
+    $value = str_replace(["\r", "\n"], '', $value);
+    return substr($value, 0, 998);
+}
+
+function parserEmbedMailQueueMeta(string $body, array $meta): string {
+    $cc = [];
+    if (!empty($meta['cc']) && is_array($meta['cc'])) {
+        foreach ($meta['cc'] as $email) {
+            $email = parserNormalizeEmail((string)$email);
+            if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $cc[$email] = true;
+            }
+        }
+    }
+
+    $reply_to = parserNormalizeEmail((string)($meta['reply_to'] ?? ''));
+    if (!filter_var($reply_to, FILTER_VALIDATE_EMAIL)) {
+        $reply_to = '';
+    }
+
+    $payload = [
+        'cc' => array_keys($cc),
+        'reply_to' => $reply_to,
+        'in_reply_to' => parserCleanMailQueueHeaderValue($meta['in_reply_to'] ?? ''),
+        'references' => parserCleanMailQueueHeaderValue($meta['references'] ?? ''),
+    ];
+
+    $json = json_encode($payload, JSON_UNESCAPED_SLASHES);
+    if ($json === false) {
+        return $body;
+    }
+
+    // Keep this compact and invisible. If mail_queue.php is not patched yet, the marker
+    // remains an HTML comment and customers will not see it.
+    $encoded = base64_encode($json);
+    return "<!-- ITFLOW_MAIL_META:$encoded -->\n" . $body;
+}
+
+
+/** ------------------------------------------------------------------
+ * Internal delegation and ignored-thread helpers.
+ * Prevents accidental tickets from internal reply-all responses to rejected mail,
+ * while still allowing internal forwards/CCs to intentionally create tickets.
+ * ------------------------------------------------------------------ */
+function parserGetConfiguredMailDomains(): array {
+    global $config_imap_username, $config_smtp_username, $config_mail_from_email, $config_ticket_from_email;
+
+    $domains = [];
+    foreach ([$config_imap_username ?? '', $config_smtp_username ?? '', $config_mail_from_email ?? '', $config_ticket_from_email ?? ''] as $address) {
+        $address = parserNormalizeEmail($address);
+        if (filter_var($address, FILTER_VALIDATE_EMAIL)) {
+            $domain = substr(strrchr($address, '@') ?: '', 1);
+            $domain = strtolower(trim($domain));
+            if ($domain !== '') {
+                $domains[$domain] = true;
+            }
+        }
+    }
+
+    return array_keys($domains);
+}
+
+function parserIsInternalEmail(?string $email): bool {
+    $email = parserNormalizeEmail($email);
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return false;
+    }
+
+    $domain = strtolower(substr(strrchr($email, '@') ?: '', 1));
+    if ($domain === '') {
+        return false;
+    }
+
+    return in_array($domain, parserGetConfiguredMailDomains(), true);
+}
+
+function parserHasForceTicketToken(string $subject): bool {
+    return (bool)preg_match('/\[(?:create|force)\s+ticket\]/i', $subject);
+}
+
+function parserStripForceTicketToken(string $subject): string {
+    $subject = preg_replace('/\s*\[(?:create|force)\s+ticket\]\s*/i', ' ', $subject);
+    return trim(preg_replace('/\s+/', ' ', $subject));
+}
+
+function parserExtractMessageIdsFromString(?string $value): array {
+    $value = parserDecodeHeaderValue($value);
+    if ($value === '') {
+        return [];
+    }
+
+    if (!preg_match_all('/<[^<>\s]+@[^<>\s]+>/', $value, $matches)) {
+        return [];
+    }
+
+    return array_values(array_unique($matches[0]));
+}
+
+function parserIgnoredThreadCachePath(): string {
+    $dir = '../uploads/tmp';
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+    }
+    return $dir . '/itflow_ignored_email_threads.json';
+}
+
+function parserLoadIgnoredThreads(): array {
+    $path = parserIgnoredThreadCachePath();
+    if (!is_file($path)) {
+        return [];
+    }
+
+    $raw = @file_get_contents($path);
+    $data = json_decode((string)$raw, true);
+    if (!is_array($data)) {
+        return [];
+    }
+
+    // Keep cache bounded and prune entries older than 30 days.
+    $cutoff = time() - (30 * 86400);
+    $out = [];
+    foreach ($data as $message_id => $row) {
+        $message_id = trim((string)$message_id);
+        $created = intval($row['created'] ?? 0);
+        if ($message_id !== '' && $created >= $cutoff) {
+            $out[$message_id] = $row;
+        }
+    }
+
+    return $out;
+}
+
+function parserSaveIgnoredThreads(array $data): void {
+    $path = parserIgnoredThreadCachePath();
+
+    // Bound the cache so a long-running install does not grow this forever.
+    if (count($data) > 1000) {
+        uasort($data, function($a, $b) {
+            return intval($b['created'] ?? 0) <=> intval($a['created'] ?? 0);
+        });
+        $data = array_slice($data, 0, 1000, true);
+    }
+
+    @file_put_contents($path, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), LOCK_EX);
+}
+
+function parserRecordIgnoredThread(string $message_id, string $from_email, string $subject): void {
+    $message_id = parserSanitizeMessageId($message_id);
+    if ($message_id === '') {
+        return;
+    }
+
+    $data = parserLoadIgnoredThreads();
+    $data[$message_id] = [
+        'created' => time(),
+        'from' => parserNormalizeEmail($from_email),
+        'subject' => substr($subject, 0, 300),
+    ];
+    parserSaveIgnoredThreads($data);
+}
+
+function parserReferencesIgnoredThread(array $thread_headers): bool {
+    $ids = [];
+    foreach (['in_reply_to', 'references'] as $key) {
+        foreach (parserExtractMessageIdsFromString($thread_headers[$key] ?? '') as $id) {
+            $ids[] = $id;
+        }
+    }
+
+    if (!$ids) {
+        return false;
+    }
+
+    $ignored = parserLoadIgnoredThreads();
+    foreach (array_unique($ids) as $id) {
+        if (isset($ignored[$id])) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function parserIsForwardedMessage(string $subject, string $body, array $attachments = []): bool {
+    if (preg_match('/^\s*(fw|fwd)\s*:/i', $subject)) {
+        return true;
+    }
+
+    $plain = html_entity_decode(strip_tags($body), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    if (preg_match('/(-{2,}\s*Forwarded message\s*-{2,}|Begin forwarded message:|^From:\s.+\R(?:.*\R){0,8}?(?:Sent|Date|To|Subject):)/mi', $plain)) {
+        return true;
+    }
+
+    foreach ($attachments as $attachment) {
+        $name = strtolower((string)($attachment['name'] ?? ''));
+        if (substr($name, -4) === '.eml') {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function parserExtractEmailAddressesFromString(?string $text): array {
+    $text = html_entity_decode(strip_tags((string)$text), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    if ($text === '') {
+        return [];
+    }
+
+    if (!preg_match_all('/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/i', $text, $matches)) {
+        return [];
+    }
+
+    $out = [];
+    foreach ($matches[0] as $email) {
+        $email = parserNormalizeEmail($email);
+        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL) && !parserIsAutomatedAddress($email)) {
+            $out[$email] = true;
+        }
+    }
+
+    return array_keys($out);
+}
+
+function parserExtractForwardedFromEmails(string $body): array {
+    $plain = html_entity_decode(strip_tags($body), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $out = [];
+
+    if (preg_match_all('/^\s*From:\s*(.+)$/mi', $plain, $matches)) {
+        foreach ($matches[1] as $from_line) {
+            $candidate = parserExtractEmailCandidate($from_line, 'forwarded From');
+            if ($candidate && !parserIsInternalEmail($candidate['email'])) {
+                $out[] = $candidate;
+            }
+        }
+    }
+
+    return $out;
+}
+
+function parserGetKnownClientIdentityFromEmail(string $email, ?string $fallback_name = null, bool $create_contact_for_domain = true): ?array {
+    global $mysqli;
+
+    $email = parserNormalizeEmail($email);
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || parserIsAutomatedAddress($email)) {
+        return null;
+    }
+
+    $email_esc = mysqli_real_escape_string($mysqli, $email);
+    $contact_sql = mysqli_query(
+        $mysqli,
+        "SELECT contact_id, contact_name, contact_email, contact_client_id
+         FROM contacts
+         WHERE LOWER(contact_email) = '$email_esc' AND contact_archived_at IS NULL
+         LIMIT 1"
+    );
+
+    if ($contact_sql && ($contact = mysqli_fetch_assoc($contact_sql))) {
+        return [
+            'contact_id' => intval($contact['contact_id']),
+            'contact_name' => sanitizeInput($contact['contact_name']),
+            'contact_email' => sanitizeInput($contact['contact_email']),
+            'client_id' => intval($contact['contact_client_id']),
+            'source' => 'known contact',
+        ];
+    }
+
+    $domain = substr(strrchr($email, '@') ?: '', 1);
+    $domain = parserNormalizeEmail($domain);
+    if ($domain === '') {
+        return null;
+    }
+
+    $domain_esc = mysqli_real_escape_string($mysqli, $domain);
+    $domain_sql = mysqli_query(
+        $mysqli,
+        "SELECT domain_client_id
+         FROM domains
+         WHERE LOWER(domain_name) = '$domain_esc' AND domain_archived_at IS NULL
+         LIMIT 1"
+    );
+
+    if ($domain_sql && ($domain_row = mysqli_fetch_assoc($domain_sql))) {
+        $client_id = intval($domain_row['domain_client_id']);
+        $name = trim((string)$fallback_name);
+        if ($name === '') {
+            $name = $email;
+        }
+
+        if ($create_contact_for_domain && $client_id > 0) {
+            $name_esc = mysqli_real_escape_string($mysqli, sanitizeInput($name));
+            mysqli_query(
+                $mysqli,
+                "INSERT INTO contacts SET
+                    contact_name = '$name_esc',
+                    contact_email = '$email_esc',
+                    contact_notes = 'Added automatically via internal email delegation parsing.',
+                    contact_client_id = $client_id"
+            );
+            $contact_id = mysqli_insert_id($mysqli);
+            logAction("Contact", "Create", "Email parser: created contact $name_esc via internal delegation/domain match", $client_id, $contact_id);
+            customAction('contact_create', $contact_id);
+        } else {
+            $contact_id = 0;
+        }
+
+        return [
+            'contact_id' => intval($contact_id),
+            'contact_name' => sanitizeInput($name),
+            'contact_email' => $email,
+            'client_id' => $client_id,
+            'source' => 'known domain',
+        ];
+    }
+
+    return null;
+}
+
+function parserFindBestClientIdentityInThread(
+    string $from_email,
+    string $from_name,
+    string $raw_headers,
+    string $body,
+    array $ccs,
+    array $local_addresses
+): ?array {
+    $local_map = [];
+    foreach ($local_addresses as $email) {
+        $email = parserNormalizeEmail($email);
+        if ($email !== '') {
+            $local_map[$email] = true;
+        }
+    }
+
+    $candidate_records = [];
+
+    // Prefer the forwarded From line; it is the best signal for delegated threads.
+    foreach (parserExtractForwardedFromEmails($body) as $candidate) {
+        $candidate_records[] = $candidate;
+    }
+
+    // Reply-To / From / To / Cc headers are next.
+    foreach (['Reply-To', 'From', 'To', 'Cc'] as $header_name) {
+        foreach (parserGetRawHeaderValues($raw_headers, $header_name) as $value) {
+            $candidate = parserExtractEmailCandidate($value, "raw $header_name");
+            if ($candidate) {
+                $candidate_records[] = $candidate;
+            }
+            foreach (parserExtractEmailAddressesFromString($value) as $email) {
+                $candidate_records[] = ['email' => $email, 'name' => null, 'source' => "raw $header_name"];
+            }
+        }
+    }
+
+    // Parsed CCs from Webklex.
+    foreach ($ccs as $email) {
+        $candidate_records[] = ['email' => $email, 'name' => null, 'source' => 'parsed Cc'];
+    }
+
+    // Body/quoted thread addresses are weaker but useful when an internal person originated the chain.
+    foreach (parserExtractEmailAddressesFromString($body) as $email) {
+        $candidate_records[] = ['email' => $email, 'name' => null, 'source' => 'message body'];
+    }
+
+    foreach ($candidate_records as $candidate) {
+        $email = parserNormalizeEmail($candidate['email'] ?? '');
+        if ($email === '' || isset($local_map[$email]) || parserIsInternalEmail($email)) {
+            continue;
+        }
+
+        $identity = parserGetKnownClientIdentityFromEmail($email, $candidate['name'] ?? null, true);
+        if ($identity) {
+            $identity['matched_email'] = $email;
+            $identity['matched_source'] = $candidate['source'] ?? 'unknown';
+            return $identity;
+        }
+    }
+
+    return null;
+}
+
+function parserBuildInternalDelegationBody(string $body, string $from_name, string $from_email, ?array $identity): string {
+    $from_label = trim($from_name) !== '' ? "$from_name <$from_email>" : $from_email;
+    $match = '';
+    if ($identity) {
+        $match = "<br>Matched client/contact using {$identity['matched_source']}: {$identity['matched_email']}";
+    }
+
+    return "<div style='border-left:3px solid #0ea5e9;padding-left:10px;margin-bottom:12px;color:#334155;'>"
+        . "<b>Internal delegation</b><br>"
+        . "Forwarded/CC'd to support by: " . htmlspecialchars($from_label, ENT_QUOTES | ENT_HTML5, 'UTF-8')
+        . $match
+        . "</div>"
+        . $body;
 }
 
 /** ------------------------------------------------------------------
@@ -597,6 +1479,16 @@ $messages = $inbox->messages()->leaveUnread()->unseen()->get();
 $processed_count = 0;
 $unprocessed_count = 0;
 
+// Addresses that belong to ITFlow / Google Groups infrastructure, not customers.
+// When Google Groups rewrites From: to one of these, the resolver can safely recover the real sender.
+$local_inbound_addresses = array_filter(array_unique(array_map('parserNormalizeEmail', [
+    $user ?? '',
+    $config_imap_username ?? '',
+    $config_ticket_from_email ?? '',
+    $config_smtp_username ?? '',
+    $config_mail_from_email ?? '',
+])));
+
 // Process messages
 foreach ($messages as $message) {
     $email_processed = false;
@@ -610,8 +1502,28 @@ foreach ($messages as $message) {
     // From
     $from_col    = $message->getFrom();
     $from_first  = ($from_col && $from_col->count()) ? $from_col->first() : null;
-    $from_email = sanitizeInput($from_first->mail ?? 'itflow-guest@example.com');
+    $from_email = sanitizeInput(parserNormalizeEmail($from_first->mail ?? 'itflow-guest@example.com'));
     $from_name  = sanitizeInput($from_first->personal ?? 'Unknown');
+
+    // Google Groups can intermittently rewrite From: to the group/parser address while preserving
+    // the real sender in Reply-To / X-Original-* headers. Recover that sender before any
+    // contact/domain/ticket matching happens.
+    $raw_headers_for_sender_resolution = (string)$message->getHeader()->raw;
+    [$resolved_from_email, $resolved_from_name, $resolved_from_source, $resolver_debug] = parserResolveGroupRewrittenSender($message, $raw_headers_for_sender_resolution, $from_email, $from_name, $local_inbound_addresses);
+    if ($resolved_from_source !== null && parserNormalizeEmail($resolved_from_email) !== parserNormalizeEmail($from_email)) {
+        logApp("Cron-Email-Parser", "info", "Resolved group sender from $from_email to $resolved_from_email using $resolved_from_source. Candidates: $resolver_debug");
+        $from_email = sanitizeInput(parserNormalizeEmail($resolved_from_email));
+        $from_name = sanitizeInput($resolved_from_name ?: $from_name);
+    } elseif (in_array(parserNormalizeEmail($from_email), $local_inbound_addresses, true)) {
+        logApp("Cron-Email-Parser", "warning", "Sender resolver could not override local sender $from_email. Candidates: $resolver_debug. Subject: " . ((string)$message->getSubject()));
+    }
+
+    $thread_headers = parserBuildThreadHeaders($raw_headers_for_sender_resolution);
+    $mail_context = [
+        'in_reply_to' => $thread_headers['in_reply_to'] ?? '',
+        'references' => $thread_headers['references'] ?? '',
+        'exclude_emails' => $local_inbound_addresses,
+    ];
 
     $from_domain = explode("@", $from_email);
     $from_domain = sanitizeInput(end($from_domain));
@@ -672,10 +1584,30 @@ foreach ($messages as $message) {
         }
     }
 
+    $force_ticket = parserHasForceTicketToken($subject);
+    if ($force_ticket) {
+        $subject = sanitizeInput(parserStripForceTicketToken($subject));
+    }
+
+    $is_internal_sender = parserIsInternalEmail($from_email);
+    $is_forwarded_message = parserIsForwardedMessage($subject, $message_body, $attachments);
+    $current_message_id = parserSanitizeMessageId(parserGetRawHeaderFirstValue($raw_headers_for_sender_resolution, 'Message-ID'));
+    $inbound_relation_headers = [
+        'in_reply_to' => parserDecodeHeaderValue(parserGetRawHeaderFirstValue($raw_headers_for_sender_resolution, 'In-Reply-To')),
+        'references' => parserDecodeHeaderValue(parserGetRawHeaderFirstValue($raw_headers_for_sender_resolution, 'References')),
+    ];
+
     // 1. Reply to existing ticket with the number in subject
     if (preg_match("/\[$config_ticket_prefix(\d+)\]/", $subject, $ticket_number_matches)) {
         $ticket_number = intval($ticket_number_matches[1]);
         $email_processed = addReply($from_email, $date, $subject, $ticket_number, $message_body, $attachments);
+    }
+
+    // Avoid creating tickets from internal reply-all responses to messages the parser already rejected.
+    // Forwards and explicit override tokens still create tickets.
+    if (!$email_processed && $is_internal_sender && !$force_ticket && !$is_forwarded_message && parserReferencesIgnoredThread($inbound_relation_headers)) {
+        logApp("Cron-Email-Parser", "info", "Skipped internal reply-all from $from_email because it references a previously ignored unknown-sender thread. Subject: $subject");
+        $email_processed = true;
     }
 
     // 2. Fuzzy duplicate check using a known contact/domain and similar_text subject
@@ -727,6 +1659,51 @@ foreach ($messages as $message) {
         }
     }
 
+    // Internal forward/CC delegation: create a ticket and try to attribute it to a
+    // known client/contact from the quoted thread. Suppress the customer auto-reply
+    // because the customer may not have emailed support directly.
+    if (!$email_processed && $is_internal_sender) {
+        $delegation_identity = parserFindBestClientIdentityInThread($from_email, $from_name, $raw_headers_for_sender_resolution, $message_body, $ccs, $local_inbound_addresses);
+        $delegation_context = $mail_context;
+        $delegation_context['suppress_customer_notification'] = true;
+
+        $delegated_body = parserBuildInternalDelegationBody($message_body, $from_name, $from_email, $delegation_identity);
+
+        if ($delegation_identity) {
+            $email_processed = addTicket(
+                intval($delegation_identity['contact_id']),
+                $delegation_identity['contact_name'],
+                $delegation_identity['contact_email'],
+                intval($delegation_identity['client_id']),
+                $date,
+                $subject,
+                $delegated_body,
+                $attachments,
+                $original_message_file,
+                $ccs,
+                $delegation_context
+            );
+        } else {
+            $email_processed = addTicket(
+                0,
+                $from_name ?: $from_email,
+                $from_email,
+                0,
+                $date,
+                $subject,
+                $delegated_body,
+                $attachments,
+                $original_message_file,
+                $ccs,
+                $delegation_context
+            );
+        }
+
+        if ($email_processed) {
+            logApp("Cron-Email-Parser", "info", "Created ticket from internal delegation by $from_email. Forwarded=" . ($is_forwarded_message ? 'yes' : 'no') . ". Subject: $subject");
+        }
+    }
+
     // 3. A known, registered contact?
     if (!$email_processed) {
         $from_email_esc = mysqli_real_escape_string($mysqli, $from_email);
@@ -739,7 +1716,7 @@ foreach ($messages as $message) {
             $contact_email = sanitizeInput($rowc['contact_email']);
             $client_id     = intval($rowc['contact_client_id']);
 
-            $email_processed = addTicket($contact_id, $contact_name, $contact_email, $client_id, $date, $subject, $message_body, $attachments, $original_message_file, $ccs);
+            $email_processed = addTicket($contact_id, $contact_name, $contact_email, $client_id, $date, $subject, $message_body, $attachments, $original_message_file, $ccs, $mail_context);
         }
     }
 
@@ -761,7 +1738,7 @@ foreach ($messages as $message) {
             logAction("Contact", "Create", "Email parser: created contact " . mysqli_real_escape_string($mysqli, $contact_name), $client_id, $contact_id);
             customAction('contact_create', $contact_id);
 
-            $email_processed = addTicket($contact_id, $contact_name, $contact_email, $client_id, $date, $subject, $message_body, $attachments, $original_message_file, $ccs);
+            $email_processed = addTicket($contact_id, $contact_name, $contact_email, $client_id, $date, $subject, $message_body, $attachments, $original_message_file, $ccs, $mail_context);
         }
     }
 
@@ -770,7 +1747,7 @@ foreach ($messages as $message) {
 
         $bad_from_pattern = "/daemon|postmaster|bounce|mta/i"; //  Stop NDRs with bad subjects raising new tickets
         if (!preg_match($bad_from_pattern, $from_email)) {
-            $email_processed = addTicket(0, $from_name, $from_email, 0, $date, $subject, $message_body, $attachments, $original_message_file, $ccs);
+            $email_processed = addTicket(0, $from_name, $from_email, 0, $date, $subject, $message_body, $attachments, $original_message_file, $ccs, $mail_context);
 
         } else {
 
@@ -888,6 +1865,10 @@ foreach ($messages as $message) {
             );
         }
     } else {
+        if (!$is_internal_sender && !$force_ticket && $current_message_id !== '') {
+            parserRecordIgnoredThread($current_message_id, $from_email, $subject);
+            logApp("Cron-Email-Parser", "info", "Recorded ignored unknown/unprocessed email thread $current_message_id from $from_email. Subject: $subject");
+        }
         $unprocessed_count++;
         try {
             $message->setFlag('Flagged');
