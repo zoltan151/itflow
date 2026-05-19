@@ -6,6 +6,171 @@
 
 defined('FROM_POST_HANDLER') || die("Direct file access is not allowed");
 
+
+/**
+ * Ticket notification helpers used by manual create/assignment workflows.
+ * Unassigned tickets use the existing configured notification recipient;
+ * assigned tickets notify the assigned user.
+ */
+function ticketPostNotifyTicketRecipient(int $ticket_id, string $event_label, string $recipient, string $recipient_name = ''): bool {
+    global $mysqli, $config_app_name, $config_ticket_from_email,
+           $config_ticket_from_name, $config_base_url, $session_name, $session_company_name;
+
+    $ticket_id = intval($ticket_id);
+    $recipient = sanitizeInput($recipient);
+    $recipient_name = sanitizeInput($recipient_name ?: $recipient);
+
+    if ($ticket_id <= 0 || empty($recipient) || !filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+        return false;
+    }
+
+    $sql = mysqli_query($mysqli, "SELECT
+            tickets.ticket_id,
+            tickets.ticket_prefix,
+            tickets.ticket_number,
+            tickets.ticket_subject,
+            tickets.ticket_details,
+            tickets.ticket_priority,
+            tickets.ticket_status,
+            tickets.ticket_url_key,
+            tickets.ticket_client_id,
+            clients.client_name,
+            contacts.contact_name,
+            contacts.contact_email,
+            ticket_statuses.ticket_status_name
+        FROM tickets
+        LEFT JOIN clients ON ticket_client_id = client_id
+        LEFT JOIN contacts ON ticket_contact_id = contact_id
+        LEFT JOIN ticket_statuses ON ticket_status = ticket_status_id
+        WHERE ticket_id = $ticket_id
+        LIMIT 1");
+
+    if (!$sql || mysqli_num_rows($sql) === 0) {
+        return false;
+    }
+
+    $row = mysqli_fetch_assoc($sql);
+
+    $ticket_prefix = sanitizeInput($row['ticket_prefix']);
+    $ticket_number = intval($row['ticket_number']);
+    $ticket_subject = sanitizeInput($row['ticket_subject']);
+    $ticket_details = (string)($row['ticket_details'] ?? '');
+    $ticket_priority = sanitizeInput($row['ticket_priority']);
+    $ticket_status_name = sanitizeInput($row['ticket_status_name'] ?: getTicketStatusName($row['ticket_status']));
+    $client_id = intval($row['ticket_client_id']);
+    $client_name = sanitizeInput($row['client_name'] ?: 'Guest / Unassigned Client');
+    $contact_name = sanitizeInput($row['contact_name'] ?: 'No contact');
+    $contact_email = sanitizeInput($row['contact_email'] ?: 'No contact email');
+
+    $config_ticket_from_email = sanitizeInput($config_ticket_from_email);
+    $config_ticket_from_name = sanitizeInput($config_ticket_from_name);
+    $base_url = sanitizeInput($config_base_url);
+    $app_name = sanitizeInput($config_app_name ?: 'ITFlow');
+    $event_label_clean = sanitizeInput($event_label);
+    $session_name_clean = sanitizeInput($session_name ?? 'ITFlow');
+    $company_name = sanitizeInput($session_company_name ?? $app_name);
+
+    $client_uri = $client_id ? "&client_id=$client_id" : '';
+    $agent_link = "https://$base_url/agent/ticket.php?ticket_id=$ticket_id$client_uri";
+
+    $safe_details = $ticket_details;
+    $safe_details = preg_replace('/<\s*(script|style|iframe|object|embed|form|input|button|select|textarea|link|meta|base)[^>]*>.*?<\s*\/\s*\1\s*>/is', '', $safe_details);
+    $safe_details = preg_replace('/<\s*(script|style|iframe|object|embed|form|input|button|select|textarea|link|meta|base)\b[^>]*\/?\s*>/is', '', $safe_details);
+    $safe_details = preg_replace('/\s+on[a-z]+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $safe_details);
+    if (strlen($safe_details) > 20000) {
+        $safe_details = substr($safe_details, 0, 20000) . "<br><br><i>[Ticket details truncated in notification email. Open the ticket for the full details.]</i>";
+    }
+
+    $email_subject = "$app_name - $event_label_clean - [$ticket_prefix$ticket_number] $ticket_subject";
+    $email_body = "Hello,<br><br>"
+        . "This is a notification that a ticket requires helpdesk attention.<br><br>"
+        . "Event: $event_label_clean<br>"
+        . "Client: $client_name<br>"
+        . "Contact: $contact_name &lt;$contact_email&gt;<br>"
+        . "Priority: $ticket_priority<br>"
+        . "Status: $ticket_status_name<br>"
+        . "Ticket: $ticket_prefix$ticket_number<br>"
+        . "Subject: $ticket_subject<br>"
+        . "Updated by: $session_name_clean<br>"
+        . "Link: <a href='$agent_link'>$agent_link</a><br><br>"
+        . "--------------------------------<br><br>"
+        . $safe_details
+        . "<br><br>--<br>$company_name<br>$config_ticket_from_email";
+
+    $data = [
+        [
+            'from' => $config_ticket_from_email,
+            'from_name' => $config_ticket_from_name,
+            'recipient' => $recipient,
+            'recipient_name' => $recipient_name,
+            'subject' => mysqli_real_escape_string($mysqli, $email_subject),
+            'body' => mysqli_real_escape_string($mysqli, $email_body),
+        ]
+    ];
+
+    addToMailQueue($data);
+    return true;
+}
+
+function ticketPostNotifyConfiguredHelpdesk(int $ticket_id, string $event_label): bool {
+    global $config_ticket_new_ticket_notification_email;
+
+    return ticketPostNotifyTicketRecipient(
+        $ticket_id,
+        $event_label,
+        (string)($config_ticket_new_ticket_notification_email ?? ''),
+        (string)($config_ticket_new_ticket_notification_email ?? '')
+    );
+}
+
+function ticketPostNotifyAssignedUser(int $ticket_id, int $assigned_to, string $event_label, bool $skip_self = false): bool {
+    global $mysqli, $session_user_id;
+
+    $ticket_id = intval($ticket_id);
+    $assigned_to = intval($assigned_to);
+
+    if ($ticket_id <= 0 || $assigned_to <= 0) {
+        return false;
+    }
+
+    if ($skip_self && intval($session_user_id ?? 0) === $assigned_to) {
+        return false;
+    }
+
+
+    $sql = mysqli_query($mysqli, "SELECT user_name, user_email FROM users WHERE user_id = $assigned_to LIMIT 1");
+    if (!$sql || mysqli_num_rows($sql) === 0) {
+        return false;
+    }
+
+    $row = mysqli_fetch_assoc($sql);
+    $user_name = sanitizeInput($row['user_name'] ?? '');
+    $user_email = sanitizeInput($row['user_email'] ?? '');
+
+    if (!filter_var($user_email, FILTER_VALIDATE_EMAIL)) {
+        return false;
+    }
+
+    return ticketPostNotifyTicketRecipient($ticket_id, $event_label, $user_email, $user_name ?: $user_email);
+}
+
+function ticketPostNotifyManualNewTicketByAssignment(int $ticket_id, int $assigned_to): bool {
+    $ticket_id = intval($ticket_id);
+    $assigned_to = intval($assigned_to);
+
+    if ($ticket_id <= 0) {
+        return false;
+    }
+
+    // Unassigned manual tickets notify the configured ticket notification recipient;
+    // assigned tickets notify the assigned user.
+    if ($assigned_to <= 0) {
+        return ticketPostNotifyConfiguredHelpdesk($ticket_id, 'New Ticket');
+    }
+
+    return ticketPostNotifyAssignedUser($ticket_id, $assigned_to, 'New Assigned Ticket');
+}
+
 if (isset($_POST['add_ticket'])) {
 
     validateCSRFToken($_POST['csrf_token']);
@@ -187,6 +352,11 @@ if (isset($_POST['add_ticket'])) {
 
     // Custom action/notif handler
     customAction('ticket_create', $ticket_id);
+
+    // Manual ticket creation notifications are assignment-aware:
+    // - Unassigned tickets notify the configured helpdesk distribution group.
+    // - Assigned tickets notify the assigned tech/user email instead.
+    ticketPostNotifyManualNewTicketByAssignment($ticket_id, $assigned_to);
 
     logAction("Ticket", "Create", "$session_name created ticket $config_ticket_prefix$ticket_number - $ticket_subject", $client_id, $ticket_id);
 
@@ -807,35 +977,14 @@ if (isset($_POST['assign_ticket'])) {
     logAction("Ticket", "Edit", "$session_name reassigned $ticket_prefix$ticket_number to $agent_name", $client_id, $ticket_id);
 
     // Notification
-    if ($session_user_id != $assigned_to && $assigned_to != 0) {
+    if ($assigned_to != 0) {
 
         // App Notification
         mysqli_query($mysqli, "INSERT INTO notifications SET notification_type = 'Ticket', notification = 'Ticket $ticket_prefix$ticket_number - Subject: $ticket_subject has been assigned to you by $session_name', notification_action = '/agent/ticket.php?ticket_id=$ticket_id$client_uri', notification_client_id = $client_id, notification_user_id = $assigned_to");
 
         // Email Notification
         if (!empty($config_smtp_host) || !empty($config_smtp_provider)) {
-
-            // Sanitize Config vars from get_settings.php
-            $config_ticket_from_name = sanitizeInput($config_ticket_from_name);
-            $config_ticket_from_email = sanitizeInput($config_ticket_from_email);
-            $company_name = sanitizeInput($session_company_name);
-
-            $subject = "$config_app_name - Ticket $ticket_prefix$ticket_number assigned to you - $ticket_subject";
-            $body = "Hi $agent_name, <br><br>A ticket has been assigned to you!<br><br>Client: $client_name<br>Ticket Number: $ticket_prefix$ticket_number<br> Subject: $ticket_subject<br><br>https://$config_base_url/agent/ticket.php?ticket_id=$ticket_id$client_uri <br><br>Thanks, <br>$session_name<br>$company_name";
-
-            // Email Ticket Agent
-            // Queue Mail
-            $data = [
-                [
-                    'from' => $config_ticket_from_email,
-                    'from_name' => $config_ticket_from_name,
-                    'recipient' => $agent_email,
-                    'recipient_name' => $agent_name,
-                    'subject' => $subject,
-                    'body' => $body,
-                ]
-            ];
-            addToMailQueue($data);
+            ticketPostNotifyAssignedUser($ticket_id, $assigned_to, 'Assigned Ticket');
         }
     }
 
@@ -1019,7 +1168,7 @@ if (isset($_POST['bulk_assign_ticket'])) {
         } // End For Each Ticket ID Loop
 
         // Notification
-        if ($session_user_id != $assign_to && $assign_to != 0) {
+        if ($assign_to != 0) {
 
             // App Notification
             mysqli_query($mysqli, "INSERT INTO notifications SET notification_type = 'Ticket', notification = '$ticket_count Tickets have been assigned to you by $session_name', notification_action = 'tickets.php?status=Open&assigned=$assign_to', notification_client_id = $client_id, notification_user_id = $assign_to");
@@ -1032,22 +1181,25 @@ if (isset($_POST['bulk_assign_ticket'])) {
                 $config_ticket_from_email = sanitizeInput($config_ticket_from_email);
                 $company_name = sanitizeInput($session_company_name);
 
+
                 $subject = "$config_app_name - $ticket_count tickets have been assigned to you";
                 $body = "Hi $agent_name, <br><br>$session_name assigned $ticket_count tickets to you!<br><br>$tickets_assigned_body<br>Thanks, <br>$session_name<br>$company_name";
 
-                // Email Ticket Agent
+                // Email Ticket Agent / routed helpdesk group
                 // Queue Mail
-                $data = [
-                    [
-                        'from' => $config_ticket_from_email,
-                        'from_name' => $config_ticket_from_name,
-                        'recipient' => $agent_email,
-                        'recipient_name' => $agent_name,
-                        'subject' => $subject,
-                        'body' => $body,
-                    ]
-                ];
-                addToMailQueue($data);
+                if (filter_var($agent_email, FILTER_VALIDATE_EMAIL)) {
+                    $data = [
+                        [
+                            'from' => $config_ticket_from_email,
+                            'from_name' => $config_ticket_from_name,
+                            'recipient' => $agent_email,
+                            'recipient_name' => $agent_name,
+                            'subject' => $subject,
+                            'body' => $body,
+                        ]
+                    ];
+                    addToMailQueue($data);
+                }
             }
         }
     }
