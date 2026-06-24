@@ -32,6 +32,12 @@ $config_ticket_prefix = sanitizeInput($config_ticket_prefix);
 $config_ticket_from_name = sanitizeInput($config_ticket_from_name);
 $config_ticket_email_parse_unknown_senders = intval($row['config_ticket_email_parse_unknown_senders']);
 
+// Neutral internal mail domain and delegation settings.
+$config_mail_internal_domains = $row['config_mail_internal_domains'] ?? '';
+$config_mail_internal_delegation_enable = intval($row['config_mail_internal_delegation_enable'] ?? 1);
+$config_mail_ignored_unknown_thread_mode = $row['config_mail_ignored_unknown_thread_mode'] ?? 'external_only';
+
+
 // Get company name & phone & timezone
 $sql = mysqli_query($mysqli, "SELECT * FROM companies, settings WHERE companies.company_id = settings.company_id AND companies.company_id = 1");
 $row = mysqli_fetch_assoc($sql);
@@ -117,7 +123,7 @@ function parserBuildInitialConversationHistoryBlock(string $ticket_message_html)
  * Ticket / Reply helpers (unchanged)
  * ------------------------------------------------------------------ */
 function addTicket($contact_id, $contact_name, $contact_email, $client_id, $date, $subject, $message, $attachments, $original_message_file, $ccs, array $mail_context = []) {
-    global $mysqli, $config_app_name, $company_name, $company_phone, $config_ticket_prefix, $config_ticket_client_general_notifications, $config_ticket_new_ticket_notification_email, $config_base_url, $config_ticket_from_name, $config_ticket_from_email, $config_ticket_default_billable, $allowed_extensions, $config_imap_username, $config_smtp_username, $config_mail_from_email;
+    global $mysqli, $config_app_name, $company_name, $company_phone, $config_ticket_prefix, $config_ticket_client_general_notifications, $config_ticket_new_ticket_notification_email, $config_base_url, $config_ticket_from_name, $config_ticket_from_email, $config_ticket_default_billable, $allowed_extensions, $config_imap_username, $config_smtp_username, $config_mail_from_email, $config_ticket_inbound_cc_watcher_mode, $config_ticket_initial_history_enable;
     $bad_pattern = "/do[\W_]*not[\W_]*reply|no[\W_]*reply/i"; // Email addresses to ignore
 
     // Atomically increment and get the new ticket number
@@ -155,17 +161,28 @@ function addTicket($contact_id, $contact_name, $contact_email, $client_id, $date
     // Build the external CC list for the ticket-created notification. These addresses
     // are also inserted as watchers below, but the notification should be one outbound
     // email to the requester with everyone else CC'd, not one isolated email per watcher.
-    $exclude_from_thread = [
+    $exclude_from_thread = array_merge([
         $contact_email,
         $config_ticket_from_email ?? '',
         $config_imap_username ?? '',
         $config_smtp_username ?? '',
         $config_mail_from_email ?? '',
-    ];
+    ], function_exists('itflowConfiguredMailInfrastructureAddresses') ? itflowConfiguredMailInfrastructureAddresses() : []);
     if (!empty($mail_context['exclude_emails']) && is_array($mail_context['exclude_emails'])) {
         $exclude_from_thread = array_merge($exclude_from_thread, $mail_context['exclude_emails']);
     }
     $thread_ccs = parserNormalizeEmailList(is_array($ccs) ? $ccs : [], $exclude_from_thread, $bad_pattern);
+
+    $inbound_cc_watcher_mode = (string)($config_ticket_inbound_cc_watcher_mode ?? 'all');
+    if (!in_array($inbound_cc_watcher_mode, ['all', 'known_contacts', 'disabled'], true)) {
+        $inbound_cc_watcher_mode = 'all';
+    }
+
+    if ($inbound_cc_watcher_mode === 'disabled') {
+        $thread_ccs = [];
+    } elseif ($inbound_cc_watcher_mode === 'known_contacts') {
+        $thread_ccs = parserFilterKnownContactEmails($thread_ccs, $client_id);
+    }
 
     mysqli_query($mysqli, "INSERT INTO tickets SET ticket_prefix = '$ticket_prefix_esc', ticket_number = $ticket_number, ticket_source = 'Email', ticket_subject = '$subject', ticket_details = '$message_esc', ticket_priority = 'Low', ticket_status = 1, ticket_billable = $config_ticket_default_billable, ticket_created_by = 0, ticket_contact_id = $contact_id, ticket_url_key = '$url_key', ticket_client_id = $client_id");
     $id = mysqli_insert_id($mysqli);
@@ -219,15 +236,16 @@ function addTicket($contact_id, $contact_name, $contact_email, $client_id, $date
     $data = [];
     if ($config_ticket_client_general_notifications == 1 && empty($mail_context['suppress_customer_notification']) && !preg_match($bad_pattern, $contact_email)) {
         $subject_email = "Ticket created - [$config_ticket_prefix$ticket_number] - $subject";
-        $initial_conversation_history = parserBuildInitialConversationHistoryBlock($message);
+        $initial_conversation_history = intval($config_ticket_initial_history_enable ?? 1) === 1 ? parserBuildInitialConversationHistoryBlock($message) : '';
         $body = "<i style='color: #808080'>##- Please type your reply above this line -##</i><br><br>Hello $contact_name,<br><br>Thank you for your email. A ticket regarding &quot;$subject&quot; has been automatically created for you.<br><br>Ticket: $config_ticket_prefix$ticket_number<br>Subject: $subject<br>Status: New<br>Portal: <a href='https://$config_base_url/guest/guest_view_ticket.php?ticket_id=$id&url_key=$url_key'>View ticket</a>";
         if ($initial_conversation_history !== '') {
             $body .= "<br><br>" . $initial_conversation_history;
         }
         $body .= "<br><br>--<br>$company_name - Support<br>$config_ticket_from_email<br>$company_phone";
 
-        // Queue metadata is embedded as an HTML comment so CC/reply headers work
-        // without requiring a database migration. mail_queue.php strips it before send.
+        // No-DB CC/threading bridge: store send metadata as an invisible HTML comment
+        // in email_content. The patched mail_queue.php strips this marker before sending
+        // and uses it to add CC, Reply-To, In-Reply-To, and References headers.
         $body = parserEmbedMailQueueMeta($body, [
             'cc' => $thread_ccs,
             'reply_to' => $config_ticket_from_email,
@@ -300,6 +318,36 @@ function parserIsTicketWatcherEmail(int $ticket_id, string $email): bool {
 }
 
 
+function parserFilterKnownContactEmails(array $emails, int $client_id): array {
+    global $mysqli;
+
+    $client_id = intval($client_id);
+    if ($client_id <= 0) {
+        return [];
+    }
+
+    $known = [];
+    foreach ($emails as $email) {
+        $email = parserNormalizeEmail((string)$email);
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            continue;
+        }
+
+        $email_esc = mysqli_real_escape_string($mysqli, $email);
+        $contact_sql = mysqli_query(
+            $mysqli,
+            "SELECT contact_id FROM contacts WHERE LOWER(contact_email) = '$email_esc' AND contact_client_id = $client_id AND contact_archived_at IS NULL LIMIT 1"
+        );
+
+        if ($contact_sql && mysqli_num_rows($contact_sql) > 0) {
+            $known[$email] = true;
+        }
+    }
+
+    return array_keys($known);
+}
+
+
 function parserGetTicketStatusIdByName(string $status_name): int {
     global $mysqli;
 
@@ -321,8 +369,50 @@ function parserGetTicketStatusIdByName(string $status_name): int {
     return 0;
 }
 
+function parserGetTicketStatusNameById(int $status_id): string {
+    global $mysqli;
+
+    $status_id = intval($status_id);
+    if ($status_id <= 0) {
+        return '';
+    }
+
+    $status_sql = mysqli_query(
+        $mysqli,
+        "SELECT ticket_status_name FROM ticket_statuses WHERE ticket_status_id = $status_id AND ticket_status_active = 1 LIMIT 1"
+    );
+
+    if ($status_sql && ($status = mysqli_fetch_assoc($status_sql))) {
+        return sanitizeInput($status['ticket_status_name'] ?? '');
+    }
+
+    return '';
+}
+
+function parserIsActiveTicketStatusId(int $status_id): bool {
+    global $mysqli;
+
+    $status_id = intval($status_id);
+    if ($status_id <= 0) {
+        return false;
+    }
+
+    $status_sql = mysqli_query(
+        $mysqli,
+        "SELECT ticket_status_id FROM ticket_statuses WHERE ticket_status_id = $status_id AND ticket_status_active = 1 LIMIT 1"
+    );
+
+    return ($status_sql && mysqli_num_rows($status_sql) > 0);
+}
+
 function parserResolveReplyTargetStatusId(): int {
-    // Prefer the named Open status so custom status IDs do not break reply handling.
+    global $config_ticket_reply_target_status_id;
+
+    $configured_status_id = intval($config_ticket_reply_target_status_id ?? 0);
+    if (parserIsActiveTicketStatusId($configured_status_id)) {
+        return $configured_status_id;
+    }
+
     $open_id = parserGetTicketStatusIdByName('Open');
     if ($open_id > 0) {
         return $open_id;
@@ -334,6 +424,40 @@ function parserResolveReplyTargetStatusId(): int {
 function parserResolveClosedStatusId(): int {
     $closed_id = parserGetTicketStatusIdByName('Closed');
     return $closed_id > 0 ? $closed_id : 5;
+}
+
+function parserBuildReplyTargetStatusNotificationBody(
+    int $ticket_id,
+    string $ticket_prefix,
+    int $ticket_number,
+    string $ticket_subject,
+    string $client_name,
+    int $client_id,
+    string $reply_from_email,
+    string $date,
+    string $latest_reply_html,
+    string $reply_target_status_name
+): string {
+    global $config_base_url, $company_name, $config_ticket_from_email, $company_phone;
+
+    $client_uri = $client_id > 0 ? "&client_id=$client_id" : '';
+    $ticket_link = "https://$config_base_url/agent/ticket.php?ticket_id=$ticket_id$client_uri";
+    $client_label = $client_name !== '' ? $client_name : 'Guest / Unknown';
+
+    $reply_html = queueSafeForHelpdeskNotification($latest_reply_html);
+
+    return "Hello,<br><br>"
+        . "A client/watcher reply was received and this ticket now needs attention.<br><br>"
+        . "Client: $client_label<br>"
+        . "Ticket: $ticket_prefix$ticket_number<br>"
+        . "Subject: $ticket_subject<br>"
+        . "Status: $reply_target_status_name<br>"
+        . "Reply From: $reply_from_email<br>"
+        . "Reply Date: $date<br>"
+        . "Link: <a href='$ticket_link'>$ticket_link</a><br><br>"
+        . "--------------------------------<br>"
+        . $reply_html
+        . "<br><br>--<br>$company_name - Support<br>$config_ticket_from_email<br>$company_phone";
 }
 
 function queueSafeForHelpdeskNotification(string $html): string {
@@ -362,7 +486,7 @@ function queueStripMailMetaIfPresent(string $html): string {
 }
 
 function addReply($from_email, $date, $subject, $ticket_number, $message, $attachments) {
-    global $mysqli, $config_app_name, $company_name, $company_phone, $config_ticket_prefix, $config_base_url, $config_ticket_from_name, $config_ticket_from_email, $config_ticket_new_ticket_notification_email, $allowed_extensions;
+    global $mysqli, $config_app_name, $company_name, $company_phone, $config_ticket_prefix, $config_base_url, $config_ticket_from_name, $config_ticket_from_email, $config_ticket_new_ticket_notification_email, $config_ticket_reply_target_status_id, $config_ticket_watcher_reply_type, $allowed_extensions;
 
     $ticket_reply_type = 'Client';
     // $message contains the raw HTML body from IMAP
@@ -451,9 +575,9 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
                 $ticket_reply_contact = intval($row2['contact_id']);
                 $ticket_reply_type = 'Client';
             } elseif (parserIsTicketWatcherEmail($ticket_id, $from_email)) {
-                // CC/watchers are valid participants in the customer thread even if they are not the primary ticket contact.
-                // Store their replies as Client-visible, not Internal, so the public conversation history stays complete.
-                $ticket_reply_type = 'Client';
+                // CC/watchers are valid participants in the customer thread. Store as configured.
+                $watcher_reply_type = (string)($config_ticket_watcher_reply_type ?? 'client');
+                $ticket_reply_type = ($watcher_reply_type === 'internal') ? 'Internal' : 'Client';
                 $ticket_reply_contact = '0';
             } else {
                 $ticket_reply_type = 'Internal';
@@ -519,9 +643,50 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
         }
 
         $reply_target_status_id = parserResolveReplyTargetStatusId();
+        $reply_target_status_name = parserGetTicketStatusNameById($reply_target_status_id);
+        if ($reply_target_status_name === '') {
+            $reply_target_status_name = 'Configured Reply Target Status';
+        }
+        $previous_ticket_status_id = intval($ticket_status);
+        $status_changed_to_reply_target = false;
 
         if ($ticket_reply_type === 'Client') {
             mysqli_query($mysqli, "UPDATE tickets SET ticket_status = $reply_target_status_id, ticket_resolved_at = NULL WHERE ticket_id = $ticket_id AND ticket_client_id = $client_id LIMIT 1");
+            $status_changed_to_reply_target = ($reply_target_status_id > 0 && $previous_ticket_status_id !== $reply_target_status_id);
+        }
+
+        if ($status_changed_to_reply_target && !empty($config_ticket_new_ticket_notification_email)) {
+            $helpdesk_notify_email = sanitizeInput($config_ticket_new_ticket_notification_email);
+            if (filter_var($helpdesk_notify_email, FILTER_VALIDATE_EMAIL)) {
+                $email_subject = "$config_app_name - $reply_target_status_name - [$config_ticket_prefix$ticket_number] $ticket_subject";
+                $email_body = parserBuildReplyTargetStatusNotificationBody(
+                    $ticket_id,
+                    $config_ticket_prefix,
+                    intval($ticket_number),
+                    $ticket_subject,
+                    $client_name,
+                    $client_id,
+                    $from_email,
+                    $date,
+                    $message,
+                    $reply_target_status_name
+                );
+
+                $data = [
+                    [
+                        'from' => $config_ticket_from_email,
+                        'from_name' => $config_ticket_from_name,
+                        'recipient' => $helpdesk_notify_email,
+                        'recipient_name' => 'Helpdesk Notifications',
+                        'subject' => mysqli_real_escape_string($mysqli, $email_subject),
+                        'body' => mysqli_real_escape_string($mysqli, $email_body)
+                    ]
+                ];
+                addToMailQueue($data);
+                logApp("Cron-Email-Parser", "info", "Ticket $config_ticket_prefix$ticket_number changed to $reply_target_status_name after client/watcher reply from $from_email and notification queued to $helpdesk_notify_email.");
+            } else {
+                logApp("Cron-Email-Parser", "warning", "Ticket $config_ticket_prefix$ticket_number changed to $reply_target_status_name but config_ticket_new_ticket_notification_email is not a valid email address.");
+            }
         }
 
         logAction("Ticket", "Edit", "Email parser: Client contact $from_email_esc updated ticket $config_ticket_prefix$ticket_number_esc ($subject)", $client_id, $ticket_id);
@@ -535,8 +700,7 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
 
 
 /** ------------------------------------------------------------------
- * Sender resolver for mailing-list/distribution-list rewrites.
- * Only overrides From when the delivered sender is a configured local mailbox.
+ * Sender resolver for Google Groups / mailing-list rewrites
  * ------------------------------------------------------------------ */
 function parserNormalizeEmail(?string $email): string {
     $email = strtolower(trim((string)$email));
@@ -717,7 +881,7 @@ function parserResolveGroupRewrittenSender($message, string $raw_headers, string
     $from_email_lc = parserNormalizeEmail($from_email);
 
     // Do not trust Reply-To/X-* globally. Only override when Gmail/Google Groups delivered the message
-    // as one of our configured infrastructure addresses.
+    // as one of the configured infrastructure addresses.
     if (!in_array($from_email_lc, $local_addresses, true)) {
         return [$from_email, $from_name, null, 'not-local-from'];
     }
@@ -891,22 +1055,19 @@ function parserEmbedMailQueueMeta(string $body, array $meta): string {
 
 
 /** ------------------------------------------------------------------
- * Internal delegation and ignored-thread helpers.
- * Prevents accidental tickets from internal reply-all responses to rejected mail,
- * while still allowing internal forwards/CCs to intentionally create tickets.
+ * Internal delegation / ignored unknown-thread helpers
  * ------------------------------------------------------------------ */
-function parserGetConfiguredMailDomains(): array {
-    global $config_imap_username, $config_smtp_username, $config_mail_from_email, $config_ticket_from_email;
+function parserConfiguredInternalDomains(): array {
+    global $config_mail_internal_domains;
 
+    $configured = (string)($config_mail_internal_domains ?? '');
     $domains = [];
-    foreach ([$config_imap_username ?? '', $config_smtp_username ?? '', $config_mail_from_email ?? '', $config_ticket_from_email ?? ''] as $address) {
-        $address = parserNormalizeEmail($address);
-        if (filter_var($address, FILTER_VALIDATE_EMAIL)) {
-            $domain = substr(strrchr($address, '@') ?: '', 1);
-            $domain = strtolower(trim($domain));
-            if ($domain !== '') {
-                $domains[$domain] = true;
-            }
+
+    foreach (preg_split('/[\r\n,;]+/', $configured) as $domain) {
+        $domain = strtolower(trim((string)$domain));
+        $domain = ltrim($domain, '@');
+        if ($domain !== '' && preg_match('/^[a-z0-9.-]+\.[a-z]{2,}$/i', $domain)) {
+            $domains[$domain] = true;
         }
     }
 
@@ -915,16 +1076,22 @@ function parserGetConfiguredMailDomains(): array {
 
 function parserIsInternalEmail(?string $email): bool {
     $email = parserNormalizeEmail($email);
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    if ($email === '' || strpos($email, '@') === false) {
         return false;
     }
 
-    $domain = strtolower(substr(strrchr($email, '@') ?: '', 1));
+    $domain = strtolower(substr(strrchr($email, '@'), 1));
     if ($domain === '') {
         return false;
     }
 
-    return in_array($domain, parserGetConfiguredMailDomains(), true);
+    foreach (parserConfiguredInternalDomains() as $internal_domain) {
+        if ($domain === $internal_domain) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function parserHasForceTicketToken(string $subject): bool {
@@ -1187,7 +1354,7 @@ function parserFindBestClientIdentityInThread(
 
     $candidate_records = [];
 
-    // Prefer the forwarded From line; it is the best signal for delegated threads.
+    // Forwarded From: is the strongest signal for internal forwarding.
     foreach (parserExtractForwardedFromEmails($body) as $candidate) {
         $candidate_records[] = $candidate;
     }
@@ -1479,15 +1646,15 @@ $messages = $inbox->messages()->leaveUnread()->unseen()->get();
 $processed_count = 0;
 $unprocessed_count = 0;
 
-// Addresses that belong to ITFlow / Google Groups infrastructure, not customers.
-// When Google Groups rewrites From: to one of these, the resolver can safely recover the real sender.
-$local_inbound_addresses = array_filter(array_unique(array_map('parserNormalizeEmail', [
+// Addresses that belong to ITFlow / mailing-list infrastructure, not customers.
+// When a group/list rewrites From: to one of these, the resolver can safely recover the real sender.
+$local_inbound_addresses = array_filter(array_unique(array_map('parserNormalizeEmail', array_merge([
     $user ?? '',
     $config_imap_username ?? '',
     $config_ticket_from_email ?? '',
     $config_smtp_username ?? '',
     $config_mail_from_email ?? '',
-])));
+], function_exists('itflowConfiguredMailInfrastructureAddresses') ? itflowConfiguredMailInfrastructureAddresses() : []))));
 
 // Process messages
 foreach ($messages as $message) {
@@ -1505,17 +1672,20 @@ foreach ($messages as $message) {
     $from_email = sanitizeInput(parserNormalizeEmail($from_first->mail ?? 'itflow-guest@example.com'));
     $from_name  = sanitizeInput($from_first->personal ?? 'Unknown');
 
-    // Google Groups can intermittently rewrite From: to the group/parser address while preserving
+    // Mailing lists can intermittently rewrite From: to a configured infrastructure address while preserving
     // the real sender in Reply-To / X-Original-* headers. Recover that sender before any
     // contact/domain/ticket matching happens.
     $raw_headers_for_sender_resolution = (string)$message->getHeader()->raw;
-    [$resolved_from_email, $resolved_from_name, $resolved_from_source, $resolver_debug] = parserResolveGroupRewrittenSender($message, $raw_headers_for_sender_resolution, $from_email, $from_name, $local_inbound_addresses);
-    if ($resolved_from_source !== null && parserNormalizeEmail($resolved_from_email) !== parserNormalizeEmail($from_email)) {
-        logApp("Cron-Email-Parser", "info", "Resolved group sender from $from_email to $resolved_from_email using $resolved_from_source. Candidates: $resolver_debug");
-        $from_email = sanitizeInput(parserNormalizeEmail($resolved_from_email));
-        $from_name = sanitizeInput($resolved_from_name ?: $from_name);
-    } elseif (in_array(parserNormalizeEmail($from_email), $local_inbound_addresses, true)) {
-        logApp("Cron-Email-Parser", "warning", "Sender resolver could not override local sender $from_email. Candidates: $resolver_debug. Subject: " . ((string)$message->getSubject()));
+    $resolver_debug = 'resolver-disabled';
+    if (intval($config_mail_group_sender_resolver ?? 1) === 1) {
+        [$resolved_from_email, $resolved_from_name, $resolved_from_source, $resolver_debug] = parserResolveGroupRewrittenSender($message, $raw_headers_for_sender_resolution, $from_email, $from_name, $local_inbound_addresses);
+        if ($resolved_from_source !== null && parserNormalizeEmail($resolved_from_email) !== parserNormalizeEmail($from_email)) {
+            logApp("Cron-Email-Parser", "info", "Resolved group sender from $from_email to $resolved_from_email using $resolved_from_source. Candidates: $resolver_debug");
+            $from_email = sanitizeInput(parserNormalizeEmail($resolved_from_email));
+            $from_name = sanitizeInput($resolved_from_name ?: $from_name);
+        } elseif (in_array(parserNormalizeEmail($from_email), $local_inbound_addresses, true)) {
+            logApp("Cron-Email-Parser", "warning", "Sender resolver could not override local sender $from_email. Candidates: $resolver_debug. Subject: " . ((string)$message->getSubject()));
+        }
     }
 
     $thread_headers = parserBuildThreadHeaders($raw_headers_for_sender_resolution);
@@ -1603,9 +1773,8 @@ foreach ($messages as $message) {
         $email_processed = addReply($from_email, $date, $subject, $ticket_number, $message_body, $attachments);
     }
 
-    // Prevent internal reply-all responses from creating tickets only when the
-    // thread references a message that was previously ignored by the parser.
-    // Forwards and explicit override tokens still create tickets.
+    // 1b. Internal reply-all to an ignored unknown-sender thread should not create a new ticket.
+    // Forwarded messages and explicit [create ticket]/[force ticket] overrides are always allowed.
     if (!$email_processed && $is_internal_sender && !$force_ticket && !$is_forwarded_message && parserReferencesIgnoredThread($inbound_relation_headers)) {
         logApp("Cron-Email-Parser", "info", "Skipped internal reply-all from $from_email because it references a previously ignored unknown-sender thread. Subject: $subject");
         $email_processed = true;
@@ -1660,10 +1829,11 @@ foreach ($messages as $message) {
         }
     }
 
-    // Internal forward/CC delegation: create a ticket and try to attribute it to a
-    // known client/contact from the quoted thread. Suppress the customer auto-reply
-    // because the customer may not have emailed support directly.
-    if (!$email_processed && $is_internal_sender) {
+    // 2b. Internal delegation: configured internal-domain users may forward or CC support to intentionally create a ticket.
+    // Try to attach the ticket to a known client/contact found in the forwarded/quoted thread. If none is found,
+    // create a Guest/Unknown ticket instead. Do not send the customer-facing ticket-created auto-reply for
+    // internal delegation, because the customer may not have directly emailed support.
+    if (!$email_processed && $is_internal_sender && intval($config_mail_internal_delegation_enable ?? 1) === 1) {
         $delegation_identity = parserFindBestClientIdentityInThread($from_email, $from_name, $raw_headers_for_sender_resolution, $message_body, $ccs, $local_inbound_addresses);
         $delegation_context = $mail_context;
         $delegation_context['suppress_customer_notification'] = true;
@@ -1866,10 +2036,15 @@ foreach ($messages as $message) {
             );
         }
     } else {
-        // Only record ignored-thread metadata when the message was not processed.
-        // If unknown-sender ticket creation is enabled, unknown messages are processed
-        // normally and are not added to the ignored-thread cache.
-        if (!$is_internal_sender && !$force_ticket && $current_message_id !== '') {
+        $ignored_unknown_mode = (string)($config_mail_ignored_unknown_thread_mode ?? 'external_only');
+        if (
+            !$force_ticket
+            && $current_message_id !== ''
+            && (
+                $ignored_unknown_mode === 'all'
+                || ($ignored_unknown_mode === 'external_only' && !$is_internal_sender)
+            )
+        ) {
             parserRecordIgnoredThread($current_message_id, $from_email, $subject);
             logApp("Cron-Email-Parser", "info", "Recorded ignored unknown/unprocessed email thread $current_message_id from $from_email. Subject: $subject");
         }

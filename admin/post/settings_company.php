@@ -34,7 +34,9 @@ if (isset($_POST['edit_company'])) {
             move_uploaded_file($file_tmp_path, $dest_path);
 
             // Delete old file
-            unlink("../uploads/settings/$existing_file_name");
+            if (!empty($existing_file_name) && file_exists("../uploads/settings/$existing_file_name")) {
+                unlink("../uploads/settings/$existing_file_name");
+            }
 
             // Set Logo
             mysqli_query($mysqli,"UPDATE companies SET company_logo = '$new_file_name' WHERE company_id = 1");
@@ -60,7 +62,9 @@ if (isset($_GET['remove_company_logo'])) {
     $row = mysqli_fetch_assoc($sql);
     $company_logo = $row['company_logo']; // FileSystem Operation Logo is already sanitized
 
-    unlink("../uploads/settings/$company_logo");
+    if (!empty($company_logo) && file_exists("../uploads/settings/$company_logo")) {
+        unlink("../uploads/settings/$company_logo");
+    }
 
     mysqli_query($mysqli,"UPDATE companies SET company_logo = NULL WHERE company_id = 1");
 

@@ -14,6 +14,7 @@ $domain_registrar = intval($row['domain_registrar']);
 $domain_webhost = intval($row['domain_webhost']);
 $domain_dnshost = intval($row['domain_dnshost']);
 $domain_mailhost = intval($row['domain_mailhost']);
+$domain_auto_map = intval($row['domain_auto_map'] ?? 1);
 $domain_ip = nullable_htmlentities($row['domain_ip']);
 $domain_name_servers = nullable_htmlentities($row['domain_name_servers']);
 $domain_mail_servers = nullable_htmlentities($row['domain_mail_servers']);
@@ -81,6 +82,14 @@ ob_start();
                         </div>
                         <input type="text" class="form-control" name="description" placeholder="Short Description" value="<?php echo $domain_description; ?>">
                     </div>
+                </div>
+
+                <div class="form-group">
+                    <div class="custom-control custom-switch">
+                        <input type="checkbox" class="custom-control-input" name="auto_map" id="autoMapDomain<?php echo $domain_id; ?>" value="1" <?php if ($domain_auto_map == 1) { echo 'checked'; } ?>>
+                        <label class="custom-control-label" for="autoMapDomain<?php echo $domain_id; ?>">Automatically map registrar, DNS host, and mail host during metadata refresh</label>
+                    </div>
+                    <small class="form-text text-muted">When enabled, manual and scheduled metadata refreshes can update matching vendor fields when a confident match is found. Disable this if you want to manage the vendor fields manually.</small>
                 </div>
 
                 <div class="form-group">

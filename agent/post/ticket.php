@@ -8,119 +8,58 @@ defined('FROM_POST_HANDLER') || die("Direct file access is not allowed");
 
 
 /**
- * Ticket notification helpers used by manual create/assignment workflows.
- * Unassigned tickets use the existing configured notification recipient;
- * assigned tickets notify the assigned user.
+ * Per-user agent notification routing helpers.
+ *
+ * Some user accounts are operational identities rather than real mailboxes.
+ * When enabled on that user's settings record, ticket assignment/update emails
+ * for that user are delivered to the configured reroute mailbox instead.
  */
-function ticketPostNotifyTicketRecipient(int $ticket_id, string $event_label, string $recipient, string $recipient_name = ''): bool {
-    global $mysqli, $config_app_name, $config_ticket_from_email,
-           $config_ticket_from_name, $config_base_url, $session_name, $session_company_name;
+function ticketPostResolveRoutedAgentNotificationRecipient(int $user_id): string {
+    global $mysqli;
 
-    $ticket_id = intval($ticket_id);
-    $recipient = sanitizeInput($recipient);
-    $recipient_name = sanitizeInput($recipient_name ?: $recipient);
-
-    if ($ticket_id <= 0 || empty($recipient) || !filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
-        return false;
+    $user_id = intval($user_id);
+    if ($user_id <= 0) {
+        return '';
     }
 
-    $sql = mysqli_query($mysqli, "SELECT
-            tickets.ticket_id,
-            tickets.ticket_prefix,
-            tickets.ticket_number,
-            tickets.ticket_subject,
-            tickets.ticket_details,
-            tickets.ticket_priority,
-            tickets.ticket_status,
-            tickets.ticket_url_key,
-            tickets.ticket_client_id,
-            clients.client_name,
-            contacts.contact_name,
-            contacts.contact_email,
-            ticket_statuses.ticket_status_name
-        FROM tickets
-        LEFT JOIN clients ON ticket_client_id = client_id
-        LEFT JOIN contacts ON ticket_contact_id = contact_id
-        LEFT JOIN ticket_statuses ON ticket_status = ticket_status_id
-        WHERE ticket_id = $ticket_id
-        LIMIT 1");
+    $sql = mysqli_query($mysqli, "
+        SELECT
+            user_settings.user_config_ticket_notifications_reroute_enable,
+            user_settings.user_config_ticket_notifications_reroute_email
+        FROM users
+        LEFT JOIN user_settings ON user_settings.user_id = users.user_id
+        WHERE users.user_id = $user_id
+          AND users.user_archived_at IS NULL
+        LIMIT 1
+    ");
 
     if (!$sql || mysqli_num_rows($sql) === 0) {
-        return false;
+        return '';
     }
 
     $row = mysqli_fetch_assoc($sql);
+    $enabled = intval($row['user_config_ticket_notifications_reroute_enable'] ?? 0);
+    $recipient = strtolower(trim((string)($row['user_config_ticket_notifications_reroute_email'] ?? '')));
 
-    $ticket_prefix = sanitizeInput($row['ticket_prefix']);
-    $ticket_number = intval($row['ticket_number']);
-    $ticket_subject = sanitizeInput($row['ticket_subject']);
-    $ticket_details = (string)($row['ticket_details'] ?? '');
-    $ticket_priority = sanitizeInput($row['ticket_priority']);
-    $ticket_status_name = sanitizeInput($row['ticket_status_name'] ?: getTicketStatusName($row['ticket_status']));
-    $client_id = intval($row['ticket_client_id']);
-    $client_name = sanitizeInput($row['client_name'] ?: 'Guest / Unassigned Client');
-    $contact_name = sanitizeInput($row['contact_name'] ?: 'No contact');
-    $contact_email = sanitizeInput($row['contact_email'] ?: 'No contact email');
-
-    $config_ticket_from_email = sanitizeInput($config_ticket_from_email);
-    $config_ticket_from_name = sanitizeInput($config_ticket_from_name);
-    $base_url = sanitizeInput($config_base_url);
-    $app_name = sanitizeInput($config_app_name ?: 'ITFlow');
-    $event_label_clean = sanitizeInput($event_label);
-    $session_name_clean = sanitizeInput($session_name ?? 'ITFlow');
-    $company_name = sanitizeInput($session_company_name ?? $app_name);
-
-    $client_uri = $client_id ? "&client_id=$client_id" : '';
-    $agent_link = "https://$base_url/agent/ticket.php?ticket_id=$ticket_id$client_uri";
-
-    $safe_details = $ticket_details;
-    $safe_details = preg_replace('/<\s*(script|style|iframe|object|embed|form|input|button|select|textarea|link|meta|base)[^>]*>.*?<\s*\/\s*\1\s*>/is', '', $safe_details);
-    $safe_details = preg_replace('/<\s*(script|style|iframe|object|embed|form|input|button|select|textarea|link|meta|base)\b[^>]*\/?\s*>/is', '', $safe_details);
-    $safe_details = preg_replace('/\s+on[a-z]+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $safe_details);
-    if (strlen($safe_details) > 20000) {
-        $safe_details = substr($safe_details, 0, 20000) . "<br><br><i>[Ticket details truncated in notification email. Open the ticket for the full details.]</i>";
+    if ($enabled !== 1 || $recipient === '' || !filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+        return '';
     }
 
-    $email_subject = "$app_name - $event_label_clean - [$ticket_prefix$ticket_number] $ticket_subject";
-    $email_body = "Hello,<br><br>"
-        . "This is a notification that a ticket requires helpdesk attention.<br><br>"
-        . "Event: $event_label_clean<br>"
-        . "Client: $client_name<br>"
-        . "Contact: $contact_name &lt;$contact_email&gt;<br>"
-        . "Priority: $ticket_priority<br>"
-        . "Status: $ticket_status_name<br>"
-        . "Ticket: $ticket_prefix$ticket_number<br>"
-        . "Subject: $ticket_subject<br>"
-        . "Updated by: $session_name_clean<br>"
-        . "Link: <a href='$agent_link'>$agent_link</a><br><br>"
-        . "--------------------------------<br><br>"
-        . $safe_details
-        . "<br><br>--<br>$company_name<br>$config_ticket_from_email";
-
-    $data = [
-        [
-            'from' => $config_ticket_from_email,
-            'from_name' => $config_ticket_from_name,
-            'recipient' => $recipient,
-            'recipient_name' => $recipient_name,
-            'subject' => mysqli_real_escape_string($mysqli, $email_subject),
-            'body' => mysqli_real_escape_string($mysqli, $email_body),
-        ]
-    ];
-
-    addToMailQueue($data);
-    return true;
+    return $recipient;
 }
 
-function ticketPostNotifyConfiguredHelpdesk(int $ticket_id, string $event_label): bool {
-    global $config_ticket_new_ticket_notification_email;
+function ticketPostShouldRouteAgentNotification(int $user_id): bool {
+    return ticketPostResolveRoutedAgentNotificationRecipient($user_id) !== '';
+}
 
-    return ticketPostNotifyTicketRecipient(
-        $ticket_id,
-        $event_label,
-        (string)($config_ticket_new_ticket_notification_email ?? ''),
-        (string)($config_ticket_new_ticket_notification_email ?? '')
-    );
+function ticketPostNotifyRoutedAgentNotification(int $ticket_id, int $user_id, string $event_label): bool {
+    $recipient = ticketPostResolveRoutedAgentNotificationRecipient($user_id);
+
+    if ($recipient === '') {
+        return false;
+    }
+
+    return ticketPostNotifyTicketRecipient($ticket_id, $event_label, $recipient, $recipient);
 }
 
 function ticketPostNotifyAssignedUser(int $ticket_id, int $assigned_to, string $event_label, bool $skip_self = false): bool {
@@ -137,6 +76,9 @@ function ticketPostNotifyAssignedUser(int $ticket_id, int $assigned_to, string $
         return false;
     }
 
+    if (ticketPostShouldRouteAgentNotification($assigned_to)) {
+        return ticketPostNotifyRoutedAgentNotification($ticket_id, $assigned_to, $event_label);
+    }
 
     $sql = mysqli_query($mysqli, "SELECT user_name, user_email FROM users WHERE user_id = $assigned_to LIMIT 1");
     if (!$sql || mysqli_num_rows($sql) === 0) {
@@ -162,13 +104,267 @@ function ticketPostNotifyManualNewTicketByAssignment(int $ticket_id, int $assign
         return false;
     }
 
-    // Unassigned manual tickets notify the configured ticket notification recipient;
-    // assigned tickets notify the assigned user.
+    // Unassigned manually-created tickets are Level 1 intake, so notify the configured
+    // helpdesk distribution group. Assigned tickets notify the assigned tech/user instead.
     if ($assigned_to <= 0) {
         return ticketPostNotifyConfiguredHelpdesk($ticket_id, 'New Ticket');
     }
 
     return ticketPostNotifyAssignedUser($ticket_id, $assigned_to, 'New Assigned Ticket');
+}
+
+
+function ticketPostWatcherNotificationBody(string $body, string $collaborator_message = 'YOU ARE A COLLABORATOR ON THIS TICKET'): string {
+    $body = (string)$body;
+    $collaborator_message = trim((string)$collaborator_message);
+
+    if ($collaborator_message === '') {
+        $collaborator_message = 'YOU ARE A COLLABORATOR ON THIS TICKET';
+    }
+
+    return $body . "<br><br>----------------------------------------<br>" . $collaborator_message;
+}
+
+function ticketPostAppendWatcherMailQueueItems(
+    array $data,
+    int $ticket_id,
+    string $from_email,
+    string $from_name,
+    string $subject,
+    string $body,
+    string $collaborator_message = 'YOU ARE A COLLABORATOR ON THIS TICKET',
+    string $cal_str = ''
+): array {
+    global $mysqli;
+
+    $ticket_id = intval($ticket_id);
+    if ($ticket_id <= 0) {
+        return $data;
+    }
+
+    $watcher_body = ticketPostWatcherNotificationBody($body, $collaborator_message);
+    $sql_watchers = mysqli_query($mysqli, "SELECT watcher_email FROM ticket_watchers WHERE watcher_ticket_id = $ticket_id");
+
+    if ($sql_watchers) {
+        while ($row = mysqli_fetch_assoc($sql_watchers)) {
+            $watcher_email = sanitizeInput($row['watcher_email'] ?? '');
+
+            if (!filter_var($watcher_email, FILTER_VALIDATE_EMAIL)) {
+                continue;
+            }
+
+            $item = [
+                'from' => $from_email,
+                'from_name' => $from_name,
+                'recipient' => $watcher_email,
+                'recipient_name' => $watcher_email,
+                'subject' => $subject,
+                'body' => $watcher_body
+            ];
+
+            if ($cal_str !== '') {
+                $item['cal_str'] = $cal_str;
+            }
+
+            $data[] = $item;
+        }
+    }
+
+    return $data;
+}
+
+
+function ticketPostResolvedFeedbackColor(string $color, string $fallback): string {
+    $color = trim($color);
+    if (preg_match('/^#[0-9A-Fa-f]{6}$/', $color)) {
+        return $color;
+    }
+    return $fallback;
+}
+
+function ticketPostResolvedFeedbackOrder($value, int $fallback): int {
+    $order = intval($value);
+    if ($order < 0) {
+        return $fallback;
+    }
+    return $order;
+}
+
+function ticketPostResolvedFeedbackSection(string $body, string $button_url = '', string $button_text = '', string $button_color = '#6c757d', string $section_title = ''): string {
+    $body = trim($body);
+    $button_url = trim($button_url);
+    $section_title = trim($section_title);
+
+    if ($body === '' && ($button_url === '' || !filter_var($button_url, FILTER_VALIDATE_URL))) {
+        return '';
+    }
+
+    // Intro-only sections stay lightweight. Action sections get a subtle card so each path is easier to scan in email clients.
+    if ($section_title === '' && ($button_url === '' || !filter_var($button_url, FILTER_VALIDATE_URL))) {
+        return "<p style='margin:0 0 14px 0;line-height:1.45;'>" . nl2br(htmlspecialchars($body, ENT_QUOTES, 'UTF-8')) . "</p>";
+    }
+
+    $button_color = ticketPostResolvedFeedbackColor($button_color, '#6c757d');
+    $title_html = htmlspecialchars($section_title, ENT_QUOTES, 'UTF-8');
+    $html = "<div style='border:1px solid #e5e7eb;border-left:4px solid $button_color;border-radius:6px;padding:12px 14px;margin:0 0 16px 0;background:#fafafa;'>";
+
+    if ($section_title !== '') {
+        $html .= "<p style='margin:0 0 8px 0;font-weight:700;color:#111827;'>$title_html</p>";
+    }
+
+    if ($body !== '') {
+        $html .= "<p style='margin:0 0 12px 0;line-height:1.45;'>" . nl2br(htmlspecialchars($body, ENT_QUOTES, 'UTF-8')) . "</p>";
+    }
+
+    if ($button_url !== '' && filter_var($button_url, FILTER_VALIDATE_URL)) {
+        $button_text = trim($button_text);
+        if ($button_text === '') {
+            $button_text = 'Open Link';
+        }
+        $button_url_html = htmlspecialchars($button_url, ENT_QUOTES, 'UTF-8');
+        $button_text_html = htmlspecialchars($button_text, ENT_QUOTES, 'UTF-8');
+        $html .= "<a href='$button_url_html' style='display:inline-block;background:$button_color;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:4px;margin:2px 8px 0 0;font-weight:700;'>$button_text_html</a>";
+    }
+
+    $html .= "</div>";
+
+    return $html;
+}
+
+function ticketPostBuildResolvedFeedbackBlock(): string {
+    global $config_ticket_resolved_feedback_enable,
+           $config_ticket_resolved_feedback_message_enable,
+           $config_ticket_resolved_feedback_message,
+           $config_ticket_resolved_feedback_message_order,
+           $config_ticket_resolved_feedback_review_enable,
+           $config_ticket_resolved_feedback_review_heading_enable,
+           $config_ticket_resolved_feedback_review_heading,
+           $config_ticket_resolved_feedback_review_message_enable,
+           $config_ticket_resolved_feedback_review_message,
+           $config_ticket_resolved_feedback_review_button_enable,
+           $config_ticket_resolved_feedback_review_url,
+           $config_ticket_resolved_feedback_review_text,
+           $config_ticket_resolved_feedback_review_order,
+           $config_ticket_resolved_feedback_review_button_color,
+           $config_ticket_resolved_feedback_private_enable,
+           $config_ticket_resolved_feedback_private_heading_enable,
+           $config_ticket_resolved_feedback_private_heading,
+           $config_ticket_resolved_feedback_private_message_enable,
+           $config_ticket_resolved_feedback_private_message,
+           $config_ticket_resolved_feedback_private_button_enable,
+           $config_ticket_resolved_feedback_private_url,
+           $config_ticket_resolved_feedback_private_text,
+           $config_ticket_resolved_feedback_private_order,
+           $config_ticket_resolved_feedback_private_button_color;
+
+    if (intval($config_ticket_resolved_feedback_enable ?? 0) !== 1) {
+        return '';
+    }
+
+    $sections = [];
+
+    if (intval($config_ticket_resolved_feedback_message_enable ?? 1) === 1) {
+        $message = trim((string)($config_ticket_resolved_feedback_message ?? ''));
+        if ($message === '') {
+            $message = 'Thank you for trusting us with your IT support.';
+        }
+        $sections[] = [
+            'order' => ticketPostResolvedFeedbackOrder($config_ticket_resolved_feedback_message_order ?? 10, 10),
+            'key' => 'intro',
+            'html' => ticketPostResolvedFeedbackSection($message),
+        ];
+    }
+
+    if (intval($config_ticket_resolved_feedback_private_enable ?? 1) === 1) {
+        $private_message = '';
+        if (intval($config_ticket_resolved_feedback_private_message_enable ?? 1) === 1) {
+            $private_message = trim((string)($config_ticket_resolved_feedback_private_message ?? ''));
+            if ($private_message === '') {
+                $private_message = "If something wasn't right, please send us private feedback so our management team can review it and make it right.";
+            }
+        }
+
+        $private_url = '';
+        $private_text = '';
+        if (intval($config_ticket_resolved_feedback_private_button_enable ?? 1) === 1) {
+            $private_url = trim((string)($config_ticket_resolved_feedback_private_url ?? ''));
+            $private_text = trim((string)($config_ticket_resolved_feedback_private_text ?? ''));
+            if ($private_text === '') {
+                $private_text = 'Send Private Feedback';
+            }
+        }
+
+        $sections[] = [
+            'order' => ticketPostResolvedFeedbackOrder($config_ticket_resolved_feedback_private_order ?? 20, 20),
+            'key' => 'private',
+            'html' => ticketPostResolvedFeedbackSection(
+                $private_message,
+                $private_url,
+                $private_text,
+                ticketPostResolvedFeedbackColor((string)($config_ticket_resolved_feedback_private_button_color ?? ''), '#d97706'),
+                (intval($config_ticket_resolved_feedback_private_heading_enable ?? 1) === 1) ? trim((string)($config_ticket_resolved_feedback_private_heading ?? 'Something we can improve?')) : ''
+            ),
+        ];
+    }
+
+    if (intval($config_ticket_resolved_feedback_review_enable ?? 1) === 1) {
+        $review_message = '';
+        if (intval($config_ticket_resolved_feedback_review_message_enable ?? 1) === 1) {
+            $review_message = trim((string)($config_ticket_resolved_feedback_review_message ?? ''));
+            if ($review_message === '') {
+                $review_message = "If you're happy with the service you received, we'd greatly appreciate a quick public review. It only takes about 30 seconds, and it makes a huge difference in helping other businesses find a reliable IT support partner.";
+            }
+        }
+
+        $review_url = '';
+        $review_text = '';
+        if (intval($config_ticket_resolved_feedback_review_button_enable ?? 1) === 1) {
+            $review_url = trim((string)($config_ticket_resolved_feedback_review_url ?? ''));
+            $review_text = trim((string)($config_ticket_resolved_feedback_review_text ?? ''));
+            if ($review_text === '') {
+                $review_text = 'Leave a Review';
+            }
+        }
+
+        $sections[] = [
+            'order' => ticketPostResolvedFeedbackOrder($config_ticket_resolved_feedback_review_order ?? 30, 30),
+            'key' => 'review',
+            'html' => ticketPostResolvedFeedbackSection(
+                $review_message,
+                $review_url,
+                $review_text,
+                ticketPostResolvedFeedbackColor((string)($config_ticket_resolved_feedback_review_button_color ?? ''), '#16a34a'),
+                (intval($config_ticket_resolved_feedback_review_heading_enable ?? 1) === 1) ? trim((string)($config_ticket_resolved_feedback_review_heading ?? 'Happy with our service?')) : ''
+            ),
+        ];
+    }
+
+    $sections = array_values(array_filter($sections, function ($section) {
+        return trim($section['html'] ?? '') !== '';
+    }));
+
+    if (empty($sections)) {
+        return '';
+    }
+
+    usort($sections, function ($a, $b) {
+        $order_compare = intval($a['order']) <=> intval($b['order']);
+        if ($order_compare !== 0) {
+            return $order_compare;
+        }
+        return strcmp((string)$a['key'], (string)$b['key']);
+    });
+
+    $html = "<br><br><div style='border-top:1px solid #dddddd;padding-top:18px;margin-top:22px;'>"
+        . "<p style='margin:0 0 14px 0;font-size:16px;'><strong>Feedback</strong></p>";
+
+    foreach ($sections as $section) {
+        $html .= $section['html'];
+    }
+
+    $html .= "</div>";
+
+    return $html;
 }
 
 if (isset($_POST['add_ticket'])) {
@@ -329,21 +525,15 @@ if (isset($_POST['add_ticket'])) {
         }
 
         // Also Email all the watchers
-        $sql_watchers = mysqli_query($mysqli, "SELECT watcher_email FROM ticket_watchers WHERE watcher_ticket_id = $ticket_id");
-        $body .= "<br><br>----------------------------------------<br>YOU HAVE BEEN ADDED AS A COLLABORATOR FOR THIS TICKET";
-        while ($row = mysqli_fetch_assoc($sql_watchers)) {
-            $watcher_email = sanitizeInput($row['watcher_email']);
-
-            // Queue Mail
-            $data[] = [
-                'from' => $config_ticket_from_email,
-                'from_name' => $config_ticket_from_name,
-                'recipient' => $watcher_email,
-                'recipient_name' => $watcher_email,
-                'subject' => $subject,
-                'body' => $body
-            ];
-        }
+        $data = ticketPostAppendWatcherMailQueueItems(
+            $data ?? [],
+            $ticket_id,
+            $config_ticket_from_email,
+            $config_ticket_from_name,
+            $subject,
+            $body,
+            'YOU HAVE BEEN ADDED AS A COLLABORATOR FOR THIS TICKET'
+        );
         addToMailQueue($data);
 
         // END EMAILING
@@ -982,7 +1172,7 @@ if (isset($_POST['assign_ticket'])) {
         // App Notification
         mysqli_query($mysqli, "INSERT INTO notifications SET notification_type = 'Ticket', notification = 'Ticket $ticket_prefix$ticket_number - Subject: $ticket_subject has been assigned to you by $session_name', notification_action = '/agent/ticket.php?ticket_id=$ticket_id$client_uri', notification_client_id = $client_id, notification_user_id = $assigned_to");
 
-        // Email Notification
+        // Email Notification. Some configured operational identities route through a shared mailbox.
         if (!empty($config_smtp_host) || !empty($config_smtp_provider)) {
             ticketPostNotifyAssignedUser($ticket_id, $assigned_to, 'Assigned Ticket');
         }
@@ -1181,6 +1371,12 @@ if (isset($_POST['bulk_assign_ticket'])) {
                 $config_ticket_from_email = sanitizeInput($config_ticket_from_email);
                 $company_name = sanitizeInput($session_company_name);
 
+                // Configured operational identities can route bulk-assignment notifications
+                // through the configured shared mailbox.
+                if (ticketPostShouldRouteAgentNotification($assign_to)) {
+                    $agent_email = sanitizeInput(ticketPostResolveRoutedAgentNotificationRecipient($assign_to));
+                    $agent_name = $agent_email;
+                }
 
                 $subject = "$config_app_name - $ticket_count tickets have been assigned to you";
                 $body = "Hi $agent_name, <br><br>$session_name assigned $ticket_count tickets to you!<br><br>$tickets_assigned_body<br>Thanks, <br>$session_name<br>$company_name";
@@ -1477,7 +1673,7 @@ if (isset($_POST['bulk_resolve_tickets'])) {
 
                     // EMAIL
                     $subject = "Ticket resolved - [$ticket_prefix$ticket_number] - $ticket_subject | (pending closure)";
-                    $body = "<i style=\'color: #808080\'>##- Please type your reply above this line -##</i><br><br>Hello $contact_name,<br><br>Your ticket regarding \"$ticket_subject\" has been marked as solved and is pending closure.<br><br>$details<br><br> If your request/issue is resolved, you can simply ignore this email. If you need further assistance, please reply or <a href=\'https://$config_base_url/guest/guest_view_ticket.php?ticket_id=$ticket_id&url_key=$url_key\'>re-open</a> to let us know! <br><br>Ticket: $ticket_prefix$ticket_number<br>Subject: $ticket_subject<br>Portal: https://$base_url/client/ticket.php?id=$ticket_id<br><br>--<br>$company_name - Support<br>$config_ticket_from_email<br>$company_phone";
+                    $body = "<i style=\'color: #808080\'>##- Please type your reply above this line -##</i><br><br>Hello $contact_name,<br><br>Your ticket regarding \"$ticket_subject\" has been marked as solved and is pending closure.<br><br>$details" . ticketPostBuildResolvedFeedbackBlock() . "<br><br>If your request/issue is resolved, you can simply ignore this email. If you need further assistance, please reply or <a href=\'https://$config_base_url/guest/guest_view_ticket.php?ticket_id=$ticket_id&url_key=$url_key\'>re-open</a> to let us know! <br><br>Ticket: $ticket_prefix$ticket_number<br>Subject: $ticket_subject<br>Portal: https://$base_url/client/ticket.php?id=$ticket_id<br><br>--<br>$company_name - Support<br>$config_ticket_from_email<br>$company_phone";
 
                     // Check email valid
                     if (filter_var($contact_email, FILTER_VALIDATE_EMAIL)) {
@@ -1498,21 +1694,14 @@ if (isset($_POST['bulk_resolve_tickets'])) {
                     }
 
                     // Also Email all the watchers
-                    $sql_watchers = mysqli_query($mysqli, "SELECT watcher_email FROM ticket_watchers WHERE watcher_ticket_id = $ticket_id");
-                    $body .= "<br><br>----------------------------------------<br>YOU ARE A COLLABORATOR ON THIS TICKET";
-                    while ($row = mysqli_fetch_assoc($sql_watchers)) {
-                        $watcher_email = sanitizeInput($row['watcher_email']);
-
-                        // Queue Mail
-                        $data[] = [
-                            'from' => $from_email,
-                            'from_name' => $from_name,
-                            'recipient' => $watcher_email,
-                            'recipient_name' => $watcher_email,
-                            'subject' => $subject,
-                            'body' => $body
-                        ];
-                    }
+                    $data = ticketPostAppendWatcherMailQueueItems(
+                        $data ?? [],
+                        $ticket_id,
+                        $from_email,
+                        $from_name,
+                        $subject,
+                        $body
+                    );
                     addToMailQueue($data);
                 } // End Mail IF
             } else {
@@ -1661,21 +1850,14 @@ if (isset($_POST['bulk_ticket_reply'])) {
                 }
 
                 // Also Email all the watchers
-                $sql_watchers = mysqli_query($mysqli, "SELECT watcher_email FROM ticket_watchers WHERE watcher_ticket_id = $ticket_id");
-                $body .= "<br><br>----------------------------------------<br>YOU ARE A COLLABORATOR ON THIS TICKET";
-                while ($row = mysqli_fetch_assoc($sql_watchers)) {
-                    $watcher_email = sanitizeInput($row['watcher_email']);
-
-                    // Queue Mail
-                    $data[] = [
-                        'from' => $from_email,
-                        'from_name' => $from_name,
-                        'recipient' => $watcher_email,
-                        'recipient_name' => $watcher_email,
-                        'subject' => $subject,
-                        'body' => $body
-                    ];
-                }
+                $data = ticketPostAppendWatcherMailQueueItems(
+                    $data ?? [],
+                    $ticket_id,
+                    $from_email,
+                    $from_name,
+                    $subject,
+                    $body
+                );
                 addToMailQueue($data);
             } //End Mail IF
 
@@ -1913,10 +2095,18 @@ if (isset($_POST['add_ticket_reply'])) {
         $ticket_reply .= getFieldById('user_settings',$session_user_id,'user_config_signature', 'raw');
     }
 
+    $ticket_reply_email = $ticket_reply; // Preserve raw reply for outbound email before SQL escaping
     $ticket_reply = mysqli_escape_string($mysqli, $ticket_reply); // SQL Escape Ticket Reply
+
+    $original_ticket_status = ticketPostGetCurrentStatusId($ticket_id);
+    $reply_target_status_id = ticketPostResolveReplyTargetStatusId();
 
     // Update Ticket Status & updated at (in case status didn't change)
     mysqli_query($mysqli, "UPDATE tickets SET ticket_status = $ticket_status, ticket_updated_at = NOW() WHERE ticket_id = $ticket_id");
+
+    if ($reply_target_status_id > 0 && $ticket_status === $reply_target_status_id && $original_ticket_status !== $reply_target_status_id) {
+        ticketPostNotifyConfiguredHelpdesk($ticket_id, getTicketStatusName($reply_target_status_id));
+    }
 
     // Resolve the ticket, if set
     if ($ticket_status == 4) {
@@ -1981,11 +2171,11 @@ if (isset($_POST['add_ticket_reply'])) {
             if ($ticket_status == 4) {
                 // Resolved
                 $subject = "Ticket resolved - [$ticket_prefix$ticket_number] - $ticket_subject | (pending closure)";
-                $body = "<i style=\'color: #808080\'>##- Please type your reply above this line -##</i><br><br>Hello $contact_name,<br><br>Your ticket regarding $ticket_subject has been marked as solved and is pending closure.<br><br>--------------------------------<br>$ticket_reply<br>--------------------------------<br><br>If your request/issue is resolved, you can simply ignore this email. If you need further assistance, please reply or <a href=\'https://$config_base_url/guest/guest_view_ticket.php?ticket_id=$ticket_id&url_key=$url_key\'>re-open</a> to let us know! <br><br>Ticket: $ticket_prefix$ticket_number<br>Subject: $ticket_subject<br>Status: $ticket_status_name<br>Portal: <a href=\'https://$config_base_url/guest/guest_view_ticket.php?ticket_id=$ticket_id&url_key=$url_key\'>View ticket</a><br><br>--<br>$company_name - Support<br>$config_ticket_from_email<br>$company_phone";
+                $body = "<i style=\'color: #808080\'>##- Please type your reply above this line -##</i><br><br>Hello $contact_name,<br><br>Your ticket regarding $ticket_subject has been marked as solved and is pending closure.<br><br>--------------------------------<br>$ticket_reply_email<br>--------------------------------" . ticketPostBuildResolvedFeedbackBlock() . "<br><br>If your request/issue is resolved, you can simply ignore this email. If you need further assistance, please reply or <a href=\'https://$config_base_url/guest/guest_view_ticket.php?ticket_id=$ticket_id&url_key=$url_key\'>re-open</a> to let us know! <br><br>Ticket: $ticket_prefix$ticket_number<br>Subject: $ticket_subject<br>Status: $ticket_status_name<br>Portal: <a href=\'https://$config_base_url/guest/guest_view_ticket.php?ticket_id=$ticket_id&url_key=$url_key\'>View ticket</a><br><br>--<br>$company_name - Support<br>$config_ticket_from_email<br>$company_phone";
             } else {
                 // Anything else
                 $subject = "Ticket update - [$ticket_prefix$ticket_number] - $ticket_subject";
-                $body = "<i style=\'color: #808080\'>##- Please type your reply above this line -##</i><br><br>Hello $contact_name,<br><br>Your ticket regarding $ticket_subject has been updated.<br><br>--------------------------------<br>$ticket_reply<br>--------------------------------<br><br>Ticket: $ticket_prefix$ticket_number<br>Subject: $ticket_subject<br>Status: $ticket_status_name<br>Portal: <a href=\'https://$config_base_url/guest/guest_view_ticket.php?ticket_id=$ticket_id&url_key=$url_key\'>View ticket</a><br><br>--<br>$company_name - Support<br>$config_ticket_from_email<br>$company_phone";
+                $body = "<i style=\'color: #808080\'>##- Please type your reply above this line -##</i><br><br>Hello $contact_name,<br><br>Your ticket regarding $ticket_subject has been updated.<br><br>--------------------------------<br>$ticket_reply_email<br>--------------------------------<br><br>Ticket: $ticket_prefix$ticket_number<br>Subject: $ticket_subject<br>Status: $ticket_status_name<br>Portal: <a href=\'https://$config_base_url/guest/guest_view_ticket.php?ticket_id=$ticket_id&url_key=$url_key\'>View ticket</a><br><br>--<br>$company_name - Support<br>$config_ticket_from_email<br>$company_phone";
             }
 
             if (filter_var($contact_email, FILTER_VALIDATE_EMAIL)) {
@@ -2005,21 +2195,14 @@ if (isset($_POST['add_ticket_reply'])) {
             }
 
             // Also Email all the watchers
-            $sql_watchers = mysqli_query($mysqli, "SELECT watcher_email FROM ticket_watchers WHERE watcher_ticket_id = $ticket_id");
-            $body .= "<br><br>----------------------------------------<br>YOU ARE A COLLABORATOR ON THIS TICKET";
-            while ($row = mysqli_fetch_assoc($sql_watchers)) {
-                $watcher_email = sanitizeInput($row['watcher_email']);
-
-                // Queue Mail
-                $data[] = [
-                    'from' => $config_ticket_from_email,
-                    'from_name' => $config_ticket_from_name,
-                    'recipient' => $watcher_email,
-                    'recipient_name' => $watcher_email,
-                    'subject' => $subject,
-                    'body' => $body
-                ];
-            }
+            $data = ticketPostAppendWatcherMailQueueItems(
+                $data ?? [],
+                $ticket_id,
+                $config_ticket_from_email,
+                $config_ticket_from_name,
+                $subject,
+                $body
+            );
             addToMailQueue($data);
 
         }
@@ -2316,7 +2499,7 @@ if (isset($_GET['resolve_ticket'])) {
 
         // EMAIL
         $subject = "Ticket resolved - [$ticket_prefix$ticket_number] - $ticket_subject | (pending closure)";
-        $body = "<i style=\'color: #808080\'>##- Please type your reply above this line -##</i><br><br>Hello $contact_name,<br><br>Your ticket regarding $ticket_subject has been marked as solved and is pending closure.<br><br>If your request/issue is resolved, you can simply ignore this email. If you need further assistance, please reply or <a href=\'https://$config_base_url/guest/guest_view_ticket.php?ticket_id=$ticket_id&url_key=$url_key\'>re-open</a> to let us know! <br><br>Ticket: $ticket_prefix$ticket_number<br>Subject: $ticket_subject<br>Status: $ticket_status<br>Portal: <a href=\'https://$config_base_url/guest/guest_view_ticket.php?ticket_id=$ticket_id&url_key=$url_key\'>View ticket</a><br><br>--<br>$company_name - Support<br>$config_ticket_from_email<br>$company_phone";
+        $body = "<i style=\'color: #808080\'>##- Please type your reply above this line -##</i><br><br>Hello $contact_name,<br><br>Your ticket regarding $ticket_subject has been marked as solved and is pending closure." . ticketPostBuildResolvedFeedbackBlock() . "<br><br>If your request/issue is resolved, you can simply ignore this email. If you need further assistance, please reply or <a href=\'https://$config_base_url/guest/guest_view_ticket.php?ticket_id=$ticket_id&url_key=$url_key\'>re-open</a> to let us know! <br><br>Ticket: $ticket_prefix$ticket_number<br>Subject: $ticket_subject<br>Status: $ticket_status<br>Portal: <a href=\'https://$config_base_url/guest/guest_view_ticket.php?ticket_id=$ticket_id&url_key=$url_key\'>View ticket</a><br><br>--<br>$company_name - Support<br>$config_ticket_from_email<br>$company_phone";
 
         // Check email valid
         if (filter_var($contact_email, FILTER_VALIDATE_EMAIL)) {
@@ -2337,21 +2520,14 @@ if (isset($_GET['resolve_ticket'])) {
         }
 
         // Also Email all the watchers
-        $sql_watchers = mysqli_query($mysqli, "SELECT watcher_email FROM ticket_watchers WHERE watcher_ticket_id = $ticket_id");
-        $body .= "<br><br>----------------------------------------<br>YOU ARE A COLLABORATOR ON THIS TICKET";
-        while ($row = mysqli_fetch_assoc($sql_watchers)) {
-            $watcher_email = sanitizeInput($row['watcher_email']);
-
-            // Queue Mail
-            $data[] = [
-                'from' => $config_ticket_from_email,
-                'from_name' => $config_ticket_from_name,
-                'recipient' => $watcher_email,
-                'recipient_name' => $watcher_email,
-                'subject' => $subject,
-                'body' => $body
-            ];
-        }
+        $data = ticketPostAppendWatcherMailQueueItems(
+            $data ?? [],
+            $ticket_id,
+            $config_ticket_from_email,
+            $config_ticket_from_name,
+            $subject,
+            $body
+        );
         addToMailQueue($data);
     }
     //End Mail IF
@@ -2436,21 +2612,14 @@ if (isset($_GET['close_ticket'])) {
         }
 
         // Also Email all the watchers
-        $sql_watchers = mysqli_query($mysqli, "SELECT watcher_email FROM ticket_watchers WHERE watcher_ticket_id = $ticket_id");
-        $body .= "<br><br>----------------------------------------<br>YOU ARE A COLLABORATOR ON THIS TICKET";
-        while ($row = mysqli_fetch_assoc($sql_watchers)) {
-            $watcher_email = sanitizeInput($row['watcher_email']);
-
-            // Queue Mail
-            $data[] = [
-                'from' => $config_ticket_from_email,
-                'from_name' => $config_ticket_from_name,
-                'recipient' => $watcher_email,
-                'recipient_name' => $watcher_email,
-                'subject' => $subject,
-                'body' => $body
-            ];
-        }
+        $data = ticketPostAppendWatcherMailQueueItems(
+            $data ?? [],
+            $ticket_id,
+            $config_ticket_from_email,
+            $config_ticket_from_name,
+            $subject,
+            $body
+        );
         addToMailQueue($data);
     }
     //End Mail IF
@@ -2895,17 +3064,7 @@ if (isset($_POST['edit_ticket_schedule'])) {
         ];
 
         // Notify the watchers of the scheduled work
-        $sql_watchers = mysqli_query($mysqli, "SELECT watcher_email FROM ticket_watchers WHERE watcher_ticket_id = $ticket_id");
-
-        while ($row = mysqli_fetch_assoc($sql_watchers)) {
-            $watcher_email = sanitizeInput($row['watcher_email']);
-            $data[] = [
-                'from' => $config_ticket_from_email,
-                'from_name' => $config_ticket_from_name,
-                'recipient' => $watcher_email,
-                'recipient_name' => $watcher_email,
-                'subject' => "Ticket Scheduled - [$ticket_prefix$ticket_number] - $ticket_subject",
-                'body' => mysqli_escape_string($mysqli, nullable_htmlentities("<div class='header'>
+        $watcher_body = mysqli_escape_string($mysqli, nullable_htmlentities("<div class='header'>
             Hello,
         </div>
         The ticket regarding $ticket_subject has been scheduled for $email_datetime.
@@ -2926,10 +3085,18 @@ if (isset($_POST['edit_ticket_schedule'])) {
         </div>
         <div class='no-reply'>
             This is an automated message. Please do not reply directly to this email.
-        </div>")),
-                'cal_str' => $cal_str
-            ];
-        }
+        </div>"));
+
+        $data = ticketPostAppendWatcherMailQueueItems(
+            $data ?? [],
+            $ticket_id,
+            $config_ticket_from_email,
+            $config_ticket_from_name,
+            "Ticket Scheduled - [$ticket_prefix$ticket_number] - $ticket_subject",
+            $watcher_body,
+            '',
+            $cal_str
+        );
     }
 
     // Send
@@ -3060,16 +3227,7 @@ if (isset($_GET['cancel_ticket_schedule'])) {
         ];
 
         // Notify the watchers of the cancellation
-        $sql_watchers = mysqli_query($mysqli, "SELECT watcher_email FROM ticket_watchers WHERE watcher_ticket_id = $ticket_id");
-        while ($row = mysqli_fetch_assoc($sql_watchers)) {
-            $watcher_email = sanitizeInput($row['watcher_email']);
-            $data[] = [
-                'from' => $config_ticket_from_email,
-                'from_name' => $config_ticket_from_name,
-                'recipient' => $watcher_email,
-                'recipient_name' => $watcher_email,
-                'subject' => "Ticket Schedule Cancelled - [$ticket_prefix$ticket_number] - $ticket_subject",
-                'body' => mysqli_escape_string($mysqli, nullable_htmlentities("<div class='header'>
+        $watcher_body = mysqli_escape_string($mysqli, nullable_htmlentities("<div class='header'>
             Hello,
         </div>
         Scheduled work for the ticket regarding $ticket_subject has been cancelled.
@@ -3090,10 +3248,18 @@ if (isset($_GET['cancel_ticket_schedule'])) {
         </div>
         <div class='no-reply'>
             This is an automated message. Please do not reply directly to this email.
-        </div>")),
-                'cal_str' => $cal_str
-            ];
-        }
+        </div>"));
+
+        $data = ticketPostAppendWatcherMailQueueItems(
+            $data ?? [],
+            $ticket_id,
+            $config_ticket_from_email,
+            $config_ticket_from_name,
+            "Ticket Schedule Cancelled - [$ticket_prefix$ticket_number] - $ticket_subject",
+            $watcher_body,
+            '',
+            $cal_str
+        );
     }
 
     // Send email(s)

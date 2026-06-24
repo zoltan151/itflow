@@ -9,3 +9,5 @@ $webhost = intval($_POST['webhost'] ?? 0);
 $mailhost = intval($_POST['mailhost'] ?? 0);
 $expire = sanitizeInput($_POST['expire']);
 $notes = sanitizeInput($_POST['notes']);
+$auto_map = isset($_POST['auto_map']) ? 1 : 0;
+$queue_refresh = isset($_POST['queue_refresh']) ? 1 : 0;

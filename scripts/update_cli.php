@@ -29,7 +29,7 @@ function printHelp() {
     echo "Options:\n";
     echo "  --help          Show this help message.\n";
     echo "  --update        Perform a git pull to update the application.\n";
-    echo "  --force_update  Perform a git fetch and hard reset to origin/master.\n";
+    echo "  --force_update  Perform a git fetch and hard reset to the active update source.\n";
     echo "  --update_db     Update the database structure to the latest version.\n";
     echo "\nIf no options are provided, a standard update (git pull) is performed.\n";
 }

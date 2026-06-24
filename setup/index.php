@@ -498,6 +498,33 @@ if (isset($_POST['add_company_settings'])) {
     $latest_database_version = LATEST_DATABASE_VERSION;
     mysqli_query($mysqli,"INSERT INTO settings SET company_id = 1, config_current_database_version = '$latest_database_version', config_invoice_prefix = 'INV-', config_invoice_next_number = 1, config_recurring_invoice_prefix = 'REC-', config_invoice_overdue_reminders = '1,3,7', config_quote_prefix = 'QUO-', config_quote_next_number = 1, config_default_net_terms = 30, config_ticket_next_number = 1, config_ticket_prefix = 'TCK-'");
 
+
+// PHASE8B2_UPDATE_SOURCES_SETUP_SEED - seed default configurable update source
+mysqli_query($mysqli, "CREATE TABLE IF NOT EXISTS `itflow_update_sources` (
+    `source_id` INT(11) NOT NULL AUTO_INCREMENT,
+    `source_name` VARCHAR(100) NOT NULL,
+    `source_remote` VARCHAR(64) NOT NULL DEFAULT 'origin',
+    `source_url` VARCHAR(500) NOT NULL,
+    `source_branch` VARCHAR(100) NOT NULL DEFAULT 'master',
+    `source_type` VARCHAR(32) NOT NULL DEFAULT 'git',
+    `source_active` TINYINT(1) NOT NULL DEFAULT 0,
+    `source_archived_at` DATETIME DEFAULT NULL,
+    `source_created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `source_updated_at` DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`source_id`),
+    KEY `source_active` (`source_active`),
+    KEY `source_archived_at` (`source_archived_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+mysqli_query($mysqli, "INSERT INTO `itflow_update_sources` SET
+    `source_name` = 'Official ITFlow',
+    `source_remote` = 'origin',
+    `source_url` = 'https://github.com/itflow-org/itflow.git',
+    `source_branch` = 'master',
+    `source_type` = 'git',
+    `source_active` = 1
+");
+
+
     // Create Categories
     // Expense Categories Examples
     mysqli_query($mysqli,"INSERT INTO categories SET category_name = 'Office Supplies', category_type = 'Expense', category_color = 'blue'");

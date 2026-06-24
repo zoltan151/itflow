@@ -31,6 +31,9 @@ $company_currency = sanitizeInput($row['company_currency']);
 
 // Company Settings
 $config_enable_cron = intval($row['config_enable_cron']);
+$config_app_notifications_enable = intval($row['config_app_notifications_enable'] ?? 0);
+$config_app_notify_cron_success_enable = intval($row['config_app_notify_cron_success_enable'] ?? 0);
+$config_app_notify_cron_failure_enable = intval($row['config_app_notify_cron_failure_enable'] ?? 0);
 $config_invoice_overdue_reminders = $row['config_invoice_overdue_reminders'];
 $config_invoice_prefix = sanitizeInput($row['config_invoice_prefix']);
 $config_invoice_from_email = sanitizeInput($row['config_invoice_from_email']);
@@ -171,7 +174,7 @@ if ($config_whitelabel_enabled && !validateWhitelabelKey($config_whitelabel_key)
 
 if ($config_enable_alert_domain_expire == 1) {
 
-    $domainAlertArray = [1,7,45];
+    $domainAlertArray = notificationDaysArray($config_notification_domain_expire_days ?? '45,7,1');
 
     foreach ($domainAlertArray as $day) {
 
@@ -201,7 +204,7 @@ if ($config_enable_alert_domain_expire == 1) {
 
 // CERTIFICATES EXPIRING
 
-$certificateAlertArray = [1,7,45];
+$certificateAlertArray = notificationDaysArray($config_notification_certificate_expire_days ?? '45,7,1');
 
 foreach ($certificateAlertArray as $day) {
 
@@ -251,7 +254,7 @@ foreach ($certificateAlertArray as $day) {
 
 // Asset Warranties Expiring
 
-$warranty_alert_array = [1,7,45];
+$warranty_alert_array = notificationDaysArray($config_notification_asset_warranty_expire_days ?? '45,7,1');
 
 foreach ($warranty_alert_array as $day) {
 
@@ -290,6 +293,24 @@ if ($tickets_pending_assignment > 0) {
 
     // Logging
     logApp("Cron", "info", "Cron created notifications for new tickets that are pending assignment");
+}
+
+// Ticket health notifications: age/SLA-style warnings and high priority visibility.
+$sql_aged_tickets = mysqli_query($mysqli, "SELECT COUNT(ticket_id) AS aged_count FROM tickets WHERE ticket_status IN (1,2,3) AND ticket_archived_at IS NULL AND ticket_created_at < NOW() - INTERVAL 24 HOUR");
+$row_aged_tickets = mysqli_fetch_assoc($sql_aged_tickets);
+$aged_ticket_count = intval($row_aged_tickets['aged_count'] ?? 0);
+if ($aged_ticket_count > 0) {
+    appNotifyOncePerDay("Ticket SLA", "There are $aged_ticket_count open ticket(s) older than 24 hours.", "/agent/tickets.php?status=Open");
+}
+
+$sql_high_priority_tickets = mysqli_query($mysqli, "SELECT ticket_id, ticket_prefix, ticket_number, ticket_subject, ticket_client_id FROM tickets WHERE ticket_status IN (1,2,3) AND ticket_archived_at IS NULL AND ticket_priority IN ('High','Critical','Urgent','Emergency') ORDER BY ticket_created_at DESC LIMIT 25");
+while ($row = mysqli_fetch_assoc($sql_high_priority_tickets)) {
+    $ticket_id = intval($row['ticket_id']);
+    $ticket_prefix = sanitizeInput($row['ticket_prefix']);
+    $ticket_number = intval($row['ticket_number']);
+    $ticket_subject = sanitizeInput($row['ticket_subject']);
+    $client_id = intval($row['ticket_client_id']);
+    appNotifyOncePerDay("High Priority Ticket", "High priority ticket $ticket_prefix$ticket_number requires attention: $ticket_subject", "/agent/ticket.php?ticket_id=$ticket_id", $client_id, $ticket_id);
 }
 
 // Recurring tickets
@@ -1249,7 +1270,9 @@ if ($updates->current_version !== $updates->latest_version) {
  */
 
 // Send Alert to inform Cron was run
-appNotify("Cron", "Cron successfully executed", "/admin/audit_log.php");
+if ($config_app_notifications_enable && $config_app_notify_cron_success_enable) {
+    appNotify("Cron", "Cron successfully executed", "/admin/audit_log.php");
+}
 
 // Logging
 logApp("Cron", "info", "Cron executed successfully");

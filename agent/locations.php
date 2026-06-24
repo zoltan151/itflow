@@ -7,7 +7,8 @@ $order = "ASC";
 // If client_id is in URI then show client Side Bar and client header
 if (isset($_GET['client_id'])) {
     require_once "includes/inc_all_client.php";
-    $client_query = "AND location_client_id = $client_id";
+    
+$client_query = "AND location_client_id = $client_id";
     $client_url = "client_id=$client_id&";
     // Overide Filter Header Archived
     if (isset($_GET['archived']) && $_GET['archived'] == 1) {

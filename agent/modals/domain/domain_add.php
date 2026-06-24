@@ -84,6 +84,22 @@ ob_start();
                     </div>
                 </div>
 
+                <div class="form-group">
+                    <div class="custom-control custom-switch">
+                        <input type="checkbox" class="custom-control-input" name="auto_map" id="autoMapDomain" value="1" checked>
+                        <label class="custom-control-label" for="autoMapDomain">Automatically map registrar, DNS host, and mail host during metadata refresh</label>
+                    </div>
+                    <small class="form-text text-muted">When enabled, manual and scheduled metadata refreshes can update matching vendor fields when a confident match is found. Disable this if you want to manage the vendor fields manually.</small>
+                </div>
+
+                <div class="form-group ml-3 pl-2 border-left">
+                    <div class="custom-control custom-switch">
+                        <input type="checkbox" class="custom-control-input" name="queue_refresh" id="queueRefreshDomain" value="1" checked>
+                        <label class="custom-control-label" for="queueRefreshDomain">Queue metadata refresh after creating this domain</label>
+                    </div>
+                    <small class="form-text text-muted">When enabled, ITFlow saves the domain immediately, then refreshes WHOIS/RDAP/DNS/SSL metadata in the background.</small>
+                </div>
+
                 <?php if ($client_id) { ?>
                 <div class="form-group">
                     <label>Registrar</label>

@@ -53,6 +53,94 @@ if (basename(dirname($_SERVER['REQUEST_URI'])) === 'guest') { ?>
 <script src="/js/confirm_modal.js"></script>
 <script src="/js/date_filter.js"></script>
 
+<!-- ITFlow layout: viewport-scoped content height; body never scrolls from AdminLTE math -->
+<style>
+    html,
+    body {
+        height: 100% !important;
+        min-height: 100% !important;
+        overflow: hidden !important;
+    }
+    .wrapper {
+        height: 100vh !important;
+        min-height: 100vh !important;
+        max-height: 100vh !important;
+        overflow: hidden !important;
+    }
+    .main-sidebar {
+        height: 100vh !important;
+        max-height: 100vh !important;
+        overflow: hidden !important;
+    }
+    .content-wrapper {
+        height: calc(100vh - var(--itflow-content-wrapper-top, 57px)) !important;
+        min-height: calc(100vh - var(--itflow-content-wrapper-top, 57px)) !important;
+        max-height: calc(100vh - var(--itflow-content-wrapper-top, 57px)) !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        box-sizing: border-box !important;
+    }
+</style>
+<script>
+(function () {
+    function normalizeViewportLayout() {
+        var contentWrapper = document.querySelector('.content-wrapper');
+        if (!contentWrapper) { return; }
+
+        var topOffset = Math.max(0, Math.ceil(contentWrapper.getBoundingClientRect().top || 0));
+        var availableHeight = Math.max(0, window.innerHeight - topOffset);
+
+        document.documentElement.style.setProperty('--itflow-content-wrapper-top', topOffset + 'px');
+        contentWrapper.style.height = availableHeight + 'px';
+        contentWrapper.style.minHeight = availableHeight + 'px';
+        contentWrapper.style.maxHeight = availableHeight + 'px';
+        contentWrapper.style.overflowY = 'auto';
+        contentWrapper.style.overflowX = 'hidden';
+    }
+
+    var queued = false;
+    function queueNormalize() {
+        if (queued) { return; }
+        queued = true;
+        window.requestAnimationFrame(function () {
+            queued = false;
+            normalizeViewportLayout();
+        });
+    }
+
+    function normalizeBurst() {
+        queueNormalize();
+        setTimeout(queueNormalize, 25);
+        setTimeout(queueNormalize, 100);
+        setTimeout(queueNormalize, 250);
+        setTimeout(queueNormalize, 750);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', normalizeBurst);
+    } else {
+        normalizeBurst();
+    }
+
+    window.addEventListener('load', normalizeBurst);
+    window.addEventListener('resize', normalizeBurst);
+
+    document.addEventListener('click', function (event) {
+        if (event.target.closest('[data-widget="pushmenu"]')) {
+            normalizeBurst();
+        }
+    });
+
+    if (window.jQuery) {
+        window.jQuery(document).on('collapsed.lte.pushmenu shown.lte.pushmenu expanded.lte.pushmenu', normalizeBurst);
+    }
+
+    if (window.MutationObserver && document.body) {
+        new MutationObserver(normalizeBurst).observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
+    }
+})();
+</script>
+
 </body>
 </html>
 

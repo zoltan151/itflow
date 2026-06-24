@@ -54,6 +54,7 @@ $sql_settings = mysqli_query($mysqli, "SELECT * FROM settings WHERE company_id =
 $row = mysqli_fetch_assoc($sql_settings);
 
 $config_enable_cron      = intval($row['config_enable_cron']);
+$config_app_notify_mail_queue_backlog_threshold = max(1, intval($row['config_app_notify_mail_queue_backlog_threshold'] ?? 50));
 
 // SMTP baseline
 $config_smtp_host        = $row['config_smtp_host'];
@@ -71,9 +72,21 @@ $config_mail_oauth_refresh_token           = $row['config_mail_oauth_refresh_tok
 $config_mail_oauth_access_token            = $row['config_mail_oauth_access_token'] ?? '';
 $config_mail_oauth_access_token_expires_at = $row['config_mail_oauth_access_token_expires_at'] ?? '';
 
+// Neutral mail infrastructure settings.
+$config_mail_infrastructure_addresses = $row['config_mail_infrastructure_addresses'] ?? '';
+$config_mail_group_sender_resolver = intval($row['config_mail_group_sender_resolver'] ?? 1);
+$config_mail_hide_infrastructure_addresses = intval($row['config_mail_hide_infrastructure_addresses'] ?? 1);
+
+
 if ($config_enable_cron == 0) {
     logApp("Cron-Mail-Queue", "error", "Cron Mail Queue unable to run - cron not enabled in admin settings.");
     exit("Cron: is not enabled -- Quitting..");
+}
+
+$pending_mail_row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT COUNT(email_id) AS pending_count FROM email_queue WHERE email_sent_at IS NULL AND email_failed_at IS NULL"));
+$pending_mail_count = intval($pending_mail_row['pending_count'] ?? 0);
+if ($pending_mail_count >= $config_app_notify_mail_queue_backlog_threshold) {
+    appNotifyOncePerDay("Mail Queue Health", "Mail queue backlog is $pending_mail_count message(s), meeting or exceeding the configured threshold of $config_app_notify_mail_queue_backlog_threshold.", "/admin/mail_queue.php");
 }
 
 if (empty($config_smtp_provider)) {
@@ -363,12 +376,8 @@ function queueExtractTicketNumberFromSubject(string $subject): int {
 }
 
 
-/**
- * For public ticket-update emails, CC ticket watchers so the outbound message
- * behaves like a normal reply-all thread.
- */
 function queueBuildTicketWatcherCcsForSubject(string $subject, array $existing_ccs, string $to_email, string $from_email): array {
-    global $mysqli, $config_smtp_username;
+    global $mysqli, $config_smtp_username, $config_ticket_mail_queue_watcher_cc_enable;
 
     // Only mutate customer-facing agent updates. Parser-created ticket emails carry their
     // own hidden CC metadata already; internal notifications must not get watcher CCs.
@@ -390,7 +399,7 @@ function queueBuildTicketWatcherCcsForSubject(string $subject, array $existing_c
     }
 
     $exclude = [];
-    foreach ([$to_email, $from_email, $config_smtp_username ?? ''] as $email) {
+    foreach (array_merge([$to_email, $from_email, $config_smtp_username ?? ''], function_exists('itflowConfiguredMailInfrastructureAddresses') ? itflowConfiguredMailInfrastructureAddresses() : []) as $email) {
         $email = normalizeQueueEmailAddress($email);
         if ($email !== '') {
             $exclude[$email] = true;
@@ -430,10 +439,6 @@ function queueDefaultReplyToForTicketSubject(string $subject, string $current_re
     return '';
 }
 
-/**
- * Build customer-visible conversation history for ticket update emails.
- * Internal notes are intentionally excluded.
- */
 function queueBuildTicketConversationHistory(string $subject, string $current_html_body): string {
     global $mysqli;
 
@@ -550,6 +555,12 @@ function queueBuildTicketConversationHistory(string $subject, string $current_ht
 }
 
 function queueAppendTicketConversationHistoryIfNeeded(string $subject, string $html_body): string {
+    global $config_ticket_mail_queue_history_enable;
+
+    if (intval($config_ticket_mail_queue_history_enable ?? 1) !== 1) {
+        return $html_body;
+    }
+
     $history = queueBuildTicketConversationHistory($subject, $html_body);
     if ($history === '') {
         return $html_body;

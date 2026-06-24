@@ -2,7 +2,11 @@
 // Get Main Side Bar Badge Counts
 
 // Active Clients Count
-$row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT COUNT('client_id') AS num FROM clients WHERE client_archived_at IS NULL $access_permission_query"));
+$internal_client_filter = '';
+if (!empty($config_internal_workspace_enable) && !empty($config_internal_hide_from_clients) && !empty($config_internal_client_id)) {
+    $internal_client_filter = 'AND client_id != ' . intval($config_internal_client_id);
+}
+$row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT COUNT('client_id') AS num FROM clients WHERE client_archived_at IS NULL $internal_client_filter $access_permission_query"));
 $num_active_clients = $row['num'];
 
 // Active Ticket Count

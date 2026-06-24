@@ -22,6 +22,76 @@ $num_rows = mysqli_fetch_row(mysqli_query($mysqli, "SELECT FOUND_ROWS()"));
 ?>
 
 <div class="card card-dark">
+
+    <div class="card card-dark">
+        <div class="card-header py-3">
+            <h3 class="card-title"><i class="fas fa-fw fa-route mr-2"></i>Ticket Notification Routing</h3>
+        </div>
+        <div class="card-body">
+            <p class="text-secondary">
+                Configure ticket assignment/update email rerouting per user. Use this for operational or queue identities whose login email should stay intact, but whose ticket notifications should be delivered to a shared mailbox.
+            </p>
+
+            <div class="table-responsive">
+                <table class="table table-sm table-striped align-middle">
+                    <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>User Email</th>
+                        <th>Reroute Enabled</th>
+                        <th>Reroute Destination</th>
+                        <th></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <?php
+                    $routing_users_sql = mysqli_query($mysqli, "
+                        SELECT
+                            users.user_id,
+                            users.user_name,
+                            users.user_email,
+                            user_settings.user_config_ticket_notifications_reroute_enable,
+                            user_settings.user_config_ticket_notifications_reroute_email
+                        FROM users
+                        LEFT JOIN user_settings ON user_settings.user_id = users.user_id
+                        WHERE users.user_archived_at IS NULL
+                        ORDER BY users.user_name
+                    ");
+
+                    while ($routing_user = mysqli_fetch_assoc($routing_users_sql)) {
+                        $routing_user_id = intval($routing_user['user_id']);
+                        $routing_user_name = nullable_htmlentities($routing_user['user_name']);
+                        $routing_user_email = nullable_htmlentities($routing_user['user_email']);
+                        $routing_enabled = intval($routing_user['user_config_ticket_notifications_reroute_enable'] ?? 0);
+                        $routing_email = nullable_htmlentities($routing_user['user_config_ticket_notifications_reroute_email'] ?? '');
+                    ?>
+                    <tr>
+                        <form action="post.php" method="post" autocomplete="off">
+                            <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token'] ?>">
+                            <input type="hidden" name="user_id" value="<?php echo $routing_user_id ?>">
+                            <td><?php echo $routing_user_name ?></td>
+                            <td><code><?php echo $routing_user_email ?></code></td>
+                            <td>
+                                <div class="custom-control custom-switch">
+                                    <input type="checkbox" class="custom-control-input" id="ticketRouting<?php echo $routing_user_id ?>" name="user_config_ticket_notifications_reroute_enable" value="1" <?php if ($routing_enabled === 1) { echo 'checked'; } ?>>
+                                    <label class="custom-control-label" for="ticketRouting<?php echo $routing_user_id ?>"></label>
+                                </div>
+                            </td>
+                            <td>
+                                <input type="email" class="form-control form-control-sm" name="user_config_ticket_notifications_reroute_email" value="<?php echo $routing_email ?>" placeholder="shared-mailbox@example.com">
+                            </td>
+                            <td class="text-right">
+                                <button type="submit" name="edit_user_ticket_notification_routing" class="btn btn-sm btn-primary text-bold"><i class="fas fa-check mr-1"></i>Save</button>
+                            </td>
+                        </form>
+                    </tr>
+                    <?php } ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <div class="card-header py-2">
         <h3 class="card-title mt-2"><i class="fas fa-fw fa-users mr-2"></i>Users</h3>
         <div class="card-tools">

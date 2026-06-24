@@ -2,6 +2,84 @@
 require_once "includes/inc_all_admin.php";
  ?>
 
+
+
+    <div class="card card-dark">
+        <div class="card-header py-3">
+            <h3 class="card-title"><i class="fas fa-fw fa-building mr-2"></i>Internal Mail Domains</h3>
+        </div>
+        <div class="card-body">
+            <form action="post.php" method="post" autocomplete="off">
+                <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token'] ?>">
+
+                <p class="text-secondary">
+                    Configure email domains that belong to internal staff. These domains control internal delegation behavior in the ticket email parser without hard-coding a company domain.
+                </p>
+
+                <div class="form-group">
+                    <label>Internal Domains</label>
+                    <textarea class="form-control" rows="4" name="config_mail_internal_domains" placeholder="example.com&#10;corp.example.com"><?php echo nullable_htmlentities($config_mail_internal_domains ?? ''); ?></textarea>
+                    <small class="text-secondary">One domain per line. Do not include mailboxes. Commas and semicolons are also accepted when saving.</small>
+                </div>
+
+                <div class="custom-control custom-switch mb-3">
+                    <input type="checkbox" class="custom-control-input" id="config_mail_internal_delegation_enable" name="config_mail_internal_delegation_enable" value="1" <?php if (intval($config_mail_internal_delegation_enable ?? 1) === 1) { echo 'checked'; } ?>>
+                    <label class="custom-control-label" for="config_mail_internal_delegation_enable">Enable internal delegation ticket creation</label>
+                    <small class="text-secondary d-block">Allows internal-domain users to forward or CC the support mailbox to create delegated tickets while suppressing the customer-facing new-ticket auto-reply.</small>
+                </div>
+
+                <div class="form-group">
+                    <label>Ignored Unknown Thread Recording</label>
+                    <select class="form-control" name="config_mail_ignored_unknown_thread_mode">
+                        <?php $ignored_mode = $config_mail_ignored_unknown_thread_mode ?? 'external_only'; ?>
+                        <option value="disabled" <?php if ($ignored_mode === 'disabled') { echo 'selected'; } ?>>Disabled</option>
+                        <option value="external_only" <?php if ($ignored_mode === 'external_only') { echo 'selected'; } ?>>External unknown threads only</option>
+                        <option value="all" <?php if ($ignored_mode === 'all') { echo 'selected'; } ?>>All unknown threads</option>
+                    </select>
+                    <small class="text-secondary">Current golden behavior is external unknown threads only.</small>
+                </div>
+
+                <button type="submit" name="edit_mail_internal_domain_settings" class="btn btn-primary text-bold"><i class="fas fa-check mr-2"></i>Save</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="card card-dark">
+        <div class="card-header py-3">
+            <h3 class="card-title"><i class="fas fa-fw fa-route mr-2"></i>Mail Infrastructure Addresses</h3>
+        </div>
+        <div class="card-body">
+            <form action="post.php" method="post" autocomplete="off">
+                <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token'] ?>">
+
+                <p class="text-secondary">
+                    Configure internal support mailboxes, group/list aliases, and routing addresses that belong to ITFlow infrastructure instead of customers.
+                    These addresses are excluded from watcher CCs and can be used by the sender resolver when a mailbox/group rewrites the visible sender.
+                </p>
+
+                <div class="form-group">
+                    <label>Infrastructure Addresses</label>
+                    <textarea class="form-control" rows="6" name="config_mail_infrastructure_addresses" placeholder="support@example.com&#10;helpdesk-group@example.com"><?php echo nullable_htmlentities($config_mail_infrastructure_addresses ?? ''); ?></textarea>
+                    <small class="text-secondary">One address per line. Commas and semicolons are also accepted when saving.</small>
+                </div>
+
+                <div class="custom-control custom-switch mb-2">
+                    <input type="checkbox" class="custom-control-input" id="config_mail_group_sender_resolver" name="config_mail_group_sender_resolver" value="1" <?php if (intval($config_mail_group_sender_resolver ?? 1) === 1) { echo 'checked'; } ?>>
+                    <label class="custom-control-label" for="config_mail_group_sender_resolver">Enable group/list sender resolver</label>
+                    <small class="text-secondary d-block">When a configured infrastructure address appears as the sender, ITFlow may recover the real sender from trusted original-sender or Reply-To headers.</small>
+                </div>
+
+                <div class="custom-control custom-switch mb-3">
+                    <input type="checkbox" class="custom-control-input" id="config_mail_hide_infrastructure_addresses" name="config_mail_hide_infrastructure_addresses" value="1" <?php if (intval($config_mail_hide_infrastructure_addresses ?? 1) === 1) { echo 'checked'; } ?>>
+                    <label class="custom-control-label" for="config_mail_hide_infrastructure_addresses">Hide infrastructure addresses from customer-facing thread recipients</label>
+                    <small class="text-secondary d-block">Prevents support aliases and group/list addresses from being copied as external ticket watchers.</small>
+                </div>
+
+                <button type="submit" name="edit_mail_infrastructure_settings" class="btn btn-primary text-bold"><i class="fas fa-check mr-2"></i>Save</button>
+            </form>
+        </div>
+    </div>
+
     <div class="card card-dark">
         <div class="card-header py-3">
             <h3 class="card-title"><i class="fas fa-fw fa-envelope mr-2"></i>SMTP Mail Settings <small>(For Sending Email)</small></h3>

@@ -6,6 +6,62 @@
 
 defined('FROM_POST_HANDLER') || die("Direct file access is not allowed");
 
+
+if (isset($_POST['edit_user_ticket_notification_routing'])) {
+
+    validateCSRFToken($_POST['csrf_token']);
+
+    $user_id = intval($_POST['user_id'] ?? 0);
+    $reroute_enable = intval($_POST['user_config_ticket_notifications_reroute_enable'] ?? 0);
+    $reroute_email = strtolower(trim((string)($_POST['user_config_ticket_notifications_reroute_email'] ?? '')));
+
+    if ($user_id <= 0) {
+        flash_alert("Invalid user selected", 'error');
+        redirect();
+    }
+
+    $user_sql = mysqli_query($mysqli, "SELECT user_name, user_email FROM users WHERE user_id = $user_id AND user_archived_at IS NULL LIMIT 1");
+    if (!$user_sql || mysqli_num_rows($user_sql) === 0) {
+        flash_alert("Invalid or archived user selected", 'error');
+        redirect();
+    }
+
+    if ($reroute_enable === 1 && ($reroute_email === '' || !filter_var($reroute_email, FILTER_VALIDATE_EMAIL))) {
+        flash_alert("A valid reroute destination email is required when rerouting is enabled", 'error');
+        redirect();
+    }
+
+    if ($reroute_enable !== 1) {
+        $reroute_enable = 0;
+        $reroute_email = '';
+    }
+
+    $settings_sql = mysqli_query($mysqli, "SELECT user_id FROM user_settings WHERE user_id = $user_id LIMIT 1");
+    if (!$settings_sql || mysqli_num_rows($settings_sql) === 0) {
+        mysqli_query($mysqli, "INSERT INTO user_settings SET user_id = $user_id");
+    }
+
+    $reroute_email_esc = mysqli_real_escape_string($mysqli, $reroute_email);
+    mysqli_query($mysqli, "
+        UPDATE user_settings SET
+            user_config_ticket_notifications_reroute_enable = $reroute_enable,
+            user_config_ticket_notifications_reroute_email = '$reroute_email_esc'
+        WHERE user_id = $user_id
+        LIMIT 1
+    ");
+
+    $user_row = mysqli_fetch_assoc($user_sql);
+    $user_name = sanitizeInput($user_row['user_name'] ?? "User ID $user_id");
+
+    logAction("User", "Edit", "$session_name edited ticket notification routing for $user_name");
+
+    flash_alert("Ticket notification routing updated for <strong>$user_name</strong>");
+
+    redirect();
+
+}
+
+
 if (isset($_POST['add_user'])) {
 
     validateCSRFToken($_POST['csrf_token']);

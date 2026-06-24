@@ -534,18 +534,26 @@ function getDomainRecords($name)
         $records['a'] = '';
         $records['ns'] = '';
         $records['mx'] = '';
+        $records['txt'] = '';
         $records['whois'] = '';
         return $records;
     }
 
-    $domain = escapeshellarg(str_replace('www.', '', $name));
+    $clean_name = str_replace('www.', '', $name);
+    $domain = escapeshellarg($clean_name);
 
-    // Get A, NS, MX, TXT, and WHOIS records
-    $records['a'] = trim(strip_tags(shell_exec("dig +short $domain")));
-    $records['ns'] = trim(strip_tags(shell_exec("dig +short NS $domain")));
-    $records['mx'] = trim(strip_tags(shell_exec("dig +short MX $domain")));
-    $records['txt'] = trim(strip_tags(shell_exec("dig +short TXT $domain")));
-    $records['whois'] = substr(trim(strip_tags(shell_exec("whois -H $domain | head -30 | sed 's/   //g'"))), 0, 254);
+    // Get A, NS, MX, TXT, and WHOIS/RDAP records with short timeouts so refreshes do not hang.
+    $records['a'] = trim(strip_tags(shell_exec("dig +time=2 +tries=1 +short $domain")));
+    $records['ns'] = trim(strip_tags(shell_exec("dig +time=2 +tries=1 +short NS $domain")));
+    $records['mx'] = trim(strip_tags(shell_exec("dig +time=2 +tries=1 +short MX $domain")));
+    $records['txt'] = trim(strip_tags(shell_exec("dig +time=2 +tries=1 +short TXT $domain")));
+
+    $whois = getDomainWhoisText($clean_name);
+    if (!domainWhoisLooksUsable($whois)) {
+        $rdap = getDomainRdapData($clean_name);
+        $whois = getDomainRdapSummary($rdap, $clean_name);
+    }
+    $records['whois'] = substr(trim(strip_tags($whois)), 0, 254);
 
     // Sort A records (if multiple records exist)
     if (!empty($records['a'])) {
@@ -1074,28 +1082,45 @@ function addToMailQueue($data) {
 
     global $mysqli;
 
+    if (!is_array($data)) {
+        return false;
+    }
+
     foreach ($data as $email) {
-        $from = strval($email['from']);
-        $from_name = strval($email['from_name']);
-        $recipient = strval($email['recipient']);
-        $recipient_name = strval($email['recipient_name']);
-        $subject = strval($email['subject']);
-        $body = strval($email['body']);
-
-        $cal_str = '';
-        if (isset($email['cal_str'])) {
-            $cal_str = mysqli_escape_string($mysqli, $email['cal_str']);
+        if (!is_array($email)) {
+            continue;
         }
 
-        // Check if 'email_queued_at' is set and not empty
+        $from = strval($email['from'] ?? '');
+        $from_name = strval($email['from_name'] ?? '');
+        $recipient = strval($email['recipient'] ?? '');
+        $recipient_name = strval($email['recipient_name'] ?? '');
+        $subject = strval($email['subject'] ?? '');
+        $body = strval($email['body'] ?? '');
+        $cal_str = strval($email['cal_str'] ?? '');
+
+        if (empty($recipient)) {
+            continue;
+        }
+
         if (isset($email['queued_at']) && !empty($email['queued_at'])) {
-            $queued_at = "'" . sanitizeInput($email['queued_at']) . "'";
-        } else {
-            // Use the current date and time if 'email_queued_at' is not set or empty
-            $queued_at = 'CURRENT_TIMESTAMP()';
-        }
+            $queued_at = sanitizeInput($email['queued_at']);
+            $stmt = mysqli_prepare($mysqli, "INSERT INTO email_queue SET email_recipient = ?, email_recipient_name = ?, email_from = ?, email_from_name = ?, email_subject = ?, email_content = ?, email_queued_at = ?, email_cal_str = ?");
 
-        mysqli_query($mysqli, "INSERT INTO email_queue SET email_recipient = '$recipient', email_recipient_name = '$recipient_name', email_from = '$from', email_from_name = '$from_name', email_subject = '$subject', email_content = '$body', email_queued_at = $queued_at, email_cal_str = '$cal_str'");
+            if ($stmt) {
+                mysqli_stmt_bind_param($stmt, 'ssssssss', $recipient, $recipient_name, $from, $from_name, $subject, $body, $queued_at, $cal_str);
+                mysqli_stmt_execute($stmt);
+                mysqli_stmt_close($stmt);
+            }
+        } else {
+            $stmt = mysqli_prepare($mysqli, "INSERT INTO email_queue SET email_recipient = ?, email_recipient_name = ?, email_from = ?, email_from_name = ?, email_subject = ?, email_content = ?, email_queued_at = CURRENT_TIMESTAMP(), email_cal_str = ?");
+
+            if ($stmt) {
+                mysqli_stmt_bind_param($stmt, 'sssssss', $recipient, $recipient_name, $from, $from_name, $subject, $body, $cal_str);
+                mysqli_stmt_execute($stmt);
+                mysqli_stmt_close($stmt);
+            }
+        }
     }
 
     return true;
@@ -1181,21 +1206,191 @@ function getTicketStatusName($ticket_status) {
 }
 
 
-function fetchUpdates() {
+function itflowGitArg($value, $fallback = '') {
+    $value = trim((string)$value);
+    if ($value === '' || !preg_match('/^[A-Za-z0-9._\/:-]+$/', $value)) {
+        return $fallback;
+    }
+    return $value;
+}
 
-    global $repo_branch;
+function getActiveUpdateSource() {
 
-    // Fetch the latest code changes but don't apply them
-    exec("git fetch", $output, $result);
-    $latest_version = exec("git rev-parse origin/$repo_branch");
-    $current_version = exec("git rev-parse HEAD");
+    global $mysqli, $repo_branch;
 
-    if ($current_version == $latest_version) {
-        $update_message = "No Updates available";
-    } else {
-        $update_message = "New Updates are Available [$latest_version]";
+    $source = null;
+
+    if ($mysqli instanceof mysqli) {
+        $sql = mysqli_query($mysqli, "SELECT * FROM itflow_update_sources WHERE source_active = 1 AND source_archived_at IS NULL ORDER BY source_id ASC LIMIT 1");
+        if ($sql) {
+            $source = mysqli_fetch_assoc($sql);
+        }
     }
 
+    if (!$source) {
+        $remote = 'origin';
+        $url = trim((string)shell_exec('git remote get-url origin 2>/dev/null'));
+        $branch = isset($repo_branch) && $repo_branch ? $repo_branch : 'master';
+
+        $source = [
+            'source_id' => 0,
+            'source_name' => 'Config Fallback',
+            'source_remote' => $remote,
+            'source_url' => $url,
+            'source_branch' => $branch,
+            'source_type' => 'git',
+            'source_active' => 1,
+        ];
+    }
+
+    $source['source_remote'] = itflowGitArg($source['source_remote'] ?? 'origin', 'origin');
+    $source['source_branch'] = itflowGitArg($source['source_branch'] ?? 'master', 'master');
+
+    return $source;
+}
+
+
+// PHASE8E_UPDATE_PREVIEW_HELPERS - generated update diff/changelog preview
+function itflowRunGitPreviewCommand(string $command): array {
+    $output = [];
+    $code = 0;
+    exec($command . " 2>&1", $output, $code);
+
+    return [
+        'code' => $code,
+        'output' => $output,
+        'text' => implode("\n", $output),
+    ];
+}
+
+function itflowBuildUpdatePreview(?array $source = null): array {
+
+    if (!$source) {
+        $source = getActiveUpdateSource();
+    }
+
+    $remote = itflowGitArg($source['source_remote'] ?? 'origin', 'origin');
+    $branch = itflowGitArg($source['source_branch'] ?? 'master', 'master');
+    $target = $remote . '/' . $branch;
+
+    if (!empty($source['source_url'])) {
+        itflowRunGitPreviewCommand("git remote set-url " . escapeshellarg($remote) . " " . escapeshellarg($source['source_url']));
+    }
+
+    $fetch = itflowRunGitPreviewCommand("git fetch " . escapeshellarg($remote) . " " . escapeshellarg($branch));
+
+    $current = trim((string)shell_exec("git rev-parse HEAD 2>/dev/null"));
+    $latest = trim((string)shell_exec("git rev-parse " . escapeshellarg($target) . " 2>/dev/null"));
+
+    $commitRows = [];
+    $commitCmd = "git log --date=short --pretty=format:%h%x09%ad%x09%an%x09%s HEAD.." . escapeshellarg($target);
+    $commitResult = itflowRunGitPreviewCommand($commitCmd);
+    foreach ($commitResult['output'] as $line) {
+        $parts = explode("\t", $line, 4);
+        if (count($parts) === 4) {
+            $commitRows[] = [
+                'hash' => $parts[0],
+                'date' => $parts[1],
+                'author' => $parts[2],
+                'subject' => $parts[3],
+            ];
+        }
+    }
+
+    $changedFiles = [];
+    $changedResult = itflowRunGitPreviewCommand("git diff --name-status HEAD.." . escapeshellarg($target));
+    foreach ($changedResult['output'] as $line) {
+        $parts = preg_split('/\s+/', $line, 2);
+        if (count($parts) === 2) {
+            $changedFiles[] = [
+                'status' => $parts[0],
+                'file' => $parts[1],
+            ];
+        }
+    }
+
+    $dirtyFiles = [];
+    $dirtyResult = itflowRunGitPreviewCommand("git status --porcelain");
+    foreach ($dirtyResult['output'] as $line) {
+        if (trim($line) === '') {
+            continue;
+        }
+        $dirtyFiles[] = [
+            'status' => substr($line, 0, 2),
+            'file' => trim(substr($line, 3)),
+        ];
+    }
+
+    $risk = [
+        'database_updates' => false,
+        'config_related' => false,
+        'composer_related' => false,
+        'admin_post_update' => false,
+        'uploads_related' => false,
+    ];
+
+    foreach ($changedFiles as $changed) {
+        $file = $changed['file'];
+        if ($file === 'admin/database_updates.php' || $file === 'includes/database_version.php') {
+            $risk['database_updates'] = true;
+        }
+        if (preg_match('/(^|\/)(config|setup|database_version|app_version)\.php$/', $file)) {
+            $risk['config_related'] = true;
+        }
+        if (preg_match('/composer\.(json|lock)$/', $file)) {
+            $risk['composer_related'] = true;
+        }
+        if ($file === 'admin/post/update.php' || $file === 'admin/update.php') {
+            $risk['admin_post_update'] = true;
+        }
+        if (str_starts_with($file, 'uploads/')) {
+            $risk['uploads_related'] = true;
+        }
+    }
+
+    return [
+        'source' => $source,
+        'remote' => $remote,
+        'branch' => $branch,
+        'target' => $target,
+        'fetch_code' => $fetch['code'],
+        'fetch_output' => $fetch['output'],
+        'current' => $current,
+        'latest' => $latest,
+        'is_update_available' => ($current !== '' && $latest !== '' && $current !== $latest),
+        'commits' => $commitRows,
+        'changed_files' => $changedFiles,
+        'dirty_files' => $dirtyFiles,
+        'risk' => $risk,
+    ];
+}
+
+
+function fetchUpdates() {
+
+    $source = getActiveUpdateSource();
+    $remote = $source['source_remote'];
+    $branch = $source['source_branch'];
+
+    $output = [];
+    $result = 1;
+
+    if (!empty($source['source_url'])) {
+        exec("git remote set-url " . escapeshellarg($remote) . " " . escapeshellarg($source['source_url']) . " 2>&1", $remote_output, $remote_result);
+    }
+
+    exec("git fetch " . escapeshellarg($remote) . " " . escapeshellarg($branch) . " 2>&1", $output, $result);
+
+    $latest_version = trim((string)shell_exec("git rev-parse " . escapeshellarg($remote . '/' . $branch) . " 2>/dev/null"));
+    $current_version = trim((string)shell_exec("git rev-parse HEAD 2>/dev/null"));
+
+    if ($current_version !== '' && $latest_version !== '' && $current_version == $latest_version) {
+        $update_message = "No Updates available";
+    } elseif ($latest_version !== '') {
+        $update_message = "New Updates are Available [$latest_version]";
+    } else {
+        $update_message = "Unable to determine latest update version";
+    }
 
     $updates = new stdClass();
     $updates->output = $output;
@@ -1203,120 +1398,449 @@ function fetchUpdates() {
     $updates->current_version = $current_version;
     $updates->latest_version = $latest_version;
     $updates->update_message = $update_message;
-
+    $updates->source = $source;
+    $updates->source_name = $source['source_name'] ?? 'Unknown';
+    $updates->source_remote = $remote;
+    $updates->source_branch = $branch;
+    $updates->source_url = $source['source_url'] ?? '';
 
     return $updates;
 
 }
 
-function getDomainExpirationDate($domain) {
-    // Execute the whois command
-    $result = shell_exec("whois " . escapeshellarg($domain));
-    if (!$result || !checkdnsrr($domain, 'SOA')) {
-        return null; // Return null if WHOIS query fails
+function getDomainWhoisText($domain)
+{
+    if (!filter_var($domain, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)) {
+        return '';
     }
 
-    $expireDate = '';
+    $result = shell_exec("timeout 8s whois " . escapeshellarg($domain) . " 2>&1");
+    return is_string($result) ? trim($result) : '';
+}
 
-    // Regular expressions to match different date formats
-    $patterns = [
-        '/Expiration Date: (.+)/',
-        '/Registry Expiry Date: (.+)/',
-        '/expires: (.+)/',
-        '/Expiry Date: (.+)/',
-        '/renewal date: (.+)/',
-        '/Expires On: (.+)/',
-        '/paid-till: (.+)/',
-        '/Expiration Time: (.+)/',
-        '/\[Expires on\]\s+(.+)/',
-        '/expire: (.+)/',
-        '/validity: (.+)/',
-        '/Expires on.*: (.+)/i',
-        '/Expiry on.*: (.+)/i',
-        '/renewal: (.+)/i',
-        '/Expir\w+ Date: (.+)/i',
-        '/Valid Until: (.+)/i',
-        '/Valid until: (.+)/i',
-        '/expire-date: (.+)/i',
-        '/Expiration Date: (.+)/i',
-        '/Registry Expiry Date: (.+)/i',
-        '/Expire Date: (.+)/i',
-        '/expiry: (.+)/i',
-        '/expires: (.+)/i',
-        '/Registry Expiry Date: (.+)/i',
-        '/Expiration Time: (.+)/i',
-        '/validity: (.+)/i',
-        '/expires: (.+)/i',
-        '/paid-till: (.+)/i',
-        '/Expire Date: (.+)/i',
-        '/Expiration Date: (.+)/i',
-        '/expire: (.+)/i',
-        '/expiry: (.+)/i',
-        '/renewal date: (.+)/i',
-        '/Expiration Date: (.+)/i',
-        '/Expiration Time: (.+)/i',
-        '/Expires: (.+)/i',
-    ];
+function domainWhoisLooksUsable($whois)
+{
+    if (empty($whois)) {
+        return false;
+    }
 
-    // Known date formats
+    return !preg_match('/getaddrinfo|name or service not known|connection timed out|no whois server|not found/i', $whois);
+}
+
+function getDomainRdapData($domain)
+{
+    if (!filter_var($domain, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) || !function_exists('curl_init')) {
+        return null;
+    }
+
+    $url = 'https://rdap.org/domain/' . rawurlencode($domain);
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_CONNECTTIMEOUT => 4,
+        CURLOPT_TIMEOUT => 8,
+        CURLOPT_USERAGENT => 'ITFlow RDAP Lookup',
+        CURLOPT_HTTPHEADER => ['Accept: application/rdap+json, application/json'],
+    ]);
+
+    $response = curl_exec($ch);
+    $http_code = intval(curl_getinfo($ch, CURLINFO_HTTP_CODE));
+    curl_close($ch);
+
+    if ($response === false || $http_code < 200 || $http_code >= 300) {
+        return null;
+    }
+
+    $data = json_decode($response, true);
+    return is_array($data) ? $data : null;
+}
+
+function parseDomainDateToYmd($date)
+{
+    $date = trim((string)$date);
+    if (empty($date)) {
+        return null;
+    }
+
+    // Trim noisy WHOIS suffixes before parsing.
+    $date = preg_replace('/\s+\(.*\)$/', '', $date);
+
     $knownFormats = [
-        "d-M-Y",
-        "d-F-Y",
-        "d-m-Y",
-        "Y-m-d",
-        "d.m.Y",
-        "Y.m.d",
-        "Y/m/d",
-        "Y/m/d H:i:s",
-        "Ymd",
-        "Ymd H:i:s",
-        "d/m/Y",
-        "Y. m. d.",
-        "Y.m.d H:i:s",
-        "d-M-Y H:i:s",
-        "D M d H:i:s T Y",
-        "D M d Y",
-        "Y-m-d\TH:i:s",
-        "Y-m-d\TH:i:s\Z",
-        "Y-m-d H:i:s\Z",
-        "Y-m-d H:i:s",
-        "d M Y H:i:s",
-        "d/m/Y H:i:s",
-        "d/m/Y H:i:s T",
-        "B d Y",
-        "d.m.Y H:i:s",
-        "before M-Y",
-        "before Y-m-d",
-        "before Ymd",
-        "Y-m-d H:i:s (\T\Z\Z)",
-        "Y-M-d.",
+        'd-M-Y',
+        'd-F-Y',
+        'd-m-Y',
+        'Y-m-d',
+        'd.m.Y',
+        'Y.m.d',
+        'Y/m/d',
+        'Y/m/d H:i:s',
+        'Ymd',
+        'Ymd H:i:s',
+        'd/m/Y',
+        'Y. m. d.',
+        'Y.m.d H:i:s',
+        'd-M-Y H:i:s',
+        'D M d H:i:s T Y',
+        'D M d Y',
+        'Y-m-d\TH:i:s',
+        'Y-m-d\TH:i:s\Z',
+        'Y-m-d H:i:s\Z',
+        'Y-m-d H:i:s',
+        'd M Y H:i:s',
+        'd/m/Y H:i:s',
+        'd/m/Y H:i:s T',
+        'B d Y',
+        'd.m.Y H:i:s',
+        'before M-Y',
+        'before Y-m-d',
+        'before Ymd',
+        'Y-m-d H:i:s (\T\Z\Z)',
+        'Y-M-d.',
     ];
 
-    // Check each pattern to find a match
-    foreach ($patterns as $pattern) {
-        if (preg_match($pattern, $result, $matches)) {
-            $expireDate = trim($matches[1]);
-            break;
+    foreach ($knownFormats as $format) {
+        $parsed_date = DateTime::createFromFormat($format, $date);
+        if ($parsed_date) {
+            return $parsed_date->format('Y-m-d');
         }
     }
 
-    if ($expireDate) {
-        // Try parsing with known formats
-        foreach ($knownFormats as $format) {
-            $parsedDate = DateTime::createFromFormat($format, $expireDate);
-            if ($parsedDate && $parsedDate->format($format) === $expireDate) {
-                return $parsedDate->format('Y-m-d');
+    $parsed_date = date_create($date);
+    if ($parsed_date) {
+        return $parsed_date->format('Y-m-d');
+    }
+
+    return null;
+}
+
+function parseDomainExpirationFromWhois($whois)
+{
+    if (!domainWhoisLooksUsable($whois)) {
+        return null;
+    }
+
+    $patterns = [
+        '/Registry Expiry Date:\s*(.+)/i',
+        '/Registrar Registration Expiration Date:\s*(.+)/i',
+        '/Expiration Date:\s*(.+)/i',
+        '/Expiry Date:\s*(.+)/i',
+        '/Expires On:\s*(.+)/i',
+        '/Expires:\s*(.+)/i',
+        '/expires:\s*(.+)/i',
+        '/paid-till:\s*(.+)/i',
+        '/renewal date:\s*(.+)/i',
+        '/Expiration Time:\s*(.+)/i',
+        '/\[Expires on\]\s+(.+)/i',
+        '/expire-date:\s*(.+)/i',
+        '/Expire Date:\s*(.+)/i',
+        '/expire:\s*(.+)/i',
+        '/expiry:\s*(.+)/i',
+        '/Valid Until:\s*(.+)/i',
+        '/validity:\s*(.+)/i',
+    ];
+
+    foreach ($patterns as $pattern) {
+        if (preg_match($pattern, $whois, $matches)) {
+            $parsed = parseDomainDateToYmd($matches[1]);
+            if ($parsed) {
+                return $parsed;
+            }
+        }
+    }
+
+    return null;
+}
+
+function parseDomainExpirationFromRdap($rdap)
+{
+    if (!is_array($rdap) || empty($rdap['events']) || !is_array($rdap['events'])) {
+        return null;
+    }
+
+    foreach ($rdap['events'] as $event) {
+        $action = strtolower(strval($event['eventAction'] ?? ''));
+        if (strpos($action, 'expir') !== false) {
+            $parsed = parseDomainDateToYmd($event['eventDate'] ?? '');
+            if ($parsed) {
+                return $parsed;
+            }
+        }
+    }
+
+    return null;
+}
+
+function getDomainRdapSummary($rdap, $domain)
+{
+    if (!is_array($rdap)) {
+        return '';
+    }
+
+    $summary = [];
+    $summary[] = 'RDAP fallback for ' . $domain;
+
+    $expiration = parseDomainExpirationFromRdap($rdap);
+    if ($expiration) {
+        $summary[] = 'Registry Expiry Date: ' . $expiration;
+    }
+
+    if (!empty($rdap['ldhName'])) {
+        $summary[] = 'Domain Name: ' . $rdap['ldhName'];
+    }
+
+    $registrar = getDomainRdapRegistrarName($rdap);
+    if (!empty($registrar)) {
+        $summary[] = 'Registrar: ' . $registrar;
+    }
+
+    if (!empty($rdap['status']) && is_array($rdap['status'])) {
+        $summary[] = 'Status: ' . implode(', ', array_slice($rdap['status'], 0, 4));
+    }
+
+    if (!empty($rdap['nameservers']) && is_array($rdap['nameservers'])) {
+        $nameservers = [];
+        foreach ($rdap['nameservers'] as $nameserver) {
+            if (!empty($nameserver['ldhName'])) {
+                $nameservers[] = $nameserver['ldhName'];
+            }
+        }
+        if (!empty($nameservers)) {
+            $summary[] = 'Name Servers: ' . implode(', ', array_slice($nameservers, 0, 4));
+        }
+    }
+
+    return implode("\n", $summary);
+}
+
+
+function getDomainRdapRegistrarName($rdap)
+{
+    if (!is_array($rdap) || empty($rdap['entities']) || !is_array($rdap['entities'])) {
+        return '';
+    }
+
+    foreach ($rdap['entities'] as $entity) {
+        $roles = $entity['roles'] ?? [];
+        if (!is_array($roles) || !in_array('registrar', array_map('strtolower', $roles))) {
+            continue;
+        }
+
+        if (!empty($entity['vcardArray'][1]) && is_array($entity['vcardArray'][1])) {
+            foreach ($entity['vcardArray'][1] as $vcard_entry) {
+                if (!is_array($vcard_entry) || count($vcard_entry) < 4) {
+                    continue;
+                }
+
+                $field = strtolower(strval($vcard_entry[0]));
+                $value = trim(strval($vcard_entry[3]));
+
+                if (($field === 'fn' || $field === 'org') && !empty($value)) {
+                    return $value;
+                }
             }
         }
 
-        // If none of the formats matched, try to parse it directly
-        $parsedDate = date_create($expireDate);
-        if ($parsedDate) {
-            return $parsedDate->format('Y-m-d');
+        if (!empty($entity['handle'])) {
+            return strval($entity['handle']);
         }
     }
 
-    return null; // Return null if expiration date is not found
+    return '';
+}
+
+function normalizeDomainProviderText($value)
+{
+    return preg_replace('/[^a-z0-9]+/', '', strtolower(strval($value)));
+}
+
+function findDomainVendorIdByAliases($client_id, $aliases, $create_missing = false, $source = '')
+{
+    global $mysqli;
+
+    $client_id = intval($client_id);
+    if ($client_id <= 0 || empty($aliases) || !is_array($aliases)) {
+        return 0;
+    }
+
+    $normalized_aliases = [];
+    $canonical_vendor_name = '';
+    foreach ($aliases as $alias) {
+        $alias = trim(strval($alias));
+        $normalized = normalizeDomainProviderText($alias);
+        if (!empty($normalized)) {
+            $normalized_aliases[] = $normalized;
+            if (empty($canonical_vendor_name)) {
+                $canonical_vendor_name = $alias;
+            }
+        }
+    }
+
+    if (empty($normalized_aliases)) {
+        return 0;
+    }
+
+    $sql = mysqli_query($mysqli, "SELECT vendor_id, vendor_name FROM vendors WHERE vendor_client_id = $client_id AND vendor_archived_at IS NULL");
+    while ($row = mysqli_fetch_assoc($sql)) {
+        $vendor_id = intval($row['vendor_id']);
+        $vendor_name = strval($row['vendor_name']);
+        $normalized_vendor = normalizeDomainProviderText($vendor_name);
+
+        if (empty($normalized_vendor)) {
+            continue;
+        }
+
+        foreach ($normalized_aliases as $normalized_alias) {
+            if ($normalized_vendor === $normalized_alias || strpos($normalized_vendor, $normalized_alias) !== false || strpos($normalized_alias, $normalized_vendor) !== false) {
+                return $vendor_id;
+            }
+        }
+    }
+
+    if (!$create_missing || empty($canonical_vendor_name)) {
+        return 0;
+    }
+
+    // Auto-create only from high-confidence provider aliases generated by getDomainProviderAliasesFromText().
+    // Do not create anything from raw/unrecognized WHOIS, DNS, or MX text.
+    $vendor_name = mysqli_real_escape_string($mysqli, $canonical_vendor_name);
+    $source = mysqli_real_escape_string($mysqli, strval($source));
+    $vendor_notes = mysqli_real_escape_string($mysqli, "Automatically created during domain metadata refresh" . (!empty($source) ? " for detected $source provider." : "."));
+
+    mysqli_query($mysqli, "INSERT INTO vendors SET vendor_name = '$vendor_name', vendor_notes = '$vendor_notes', vendor_client_id = $client_id");
+
+    $vendor_id = intval(mysqli_insert_id($mysqli));
+    if ($vendor_id > 0) {
+        if (function_exists('logApp')) {
+            logApp('Domain-Vendor-AutoMap', 'info', "Created vendor $canonical_vendor_name for client ID $client_id from detected domain provider");
+        }
+        return $vendor_id;
+    }
+
+    return 0;
+}
+
+function getDomainProviderAliasesFromText($text, $type = '')
+{
+    $text = strtolower(strval($text));
+    if (empty($text)) {
+        return [];
+    }
+
+    $provider_patterns = [
+        ['pattern' => '/cloudflare/i', 'aliases' => ['Cloudflare']],
+        ['pattern' => '/googlemail|aspmx\.l\.google|googlehosted|google workspace|google apps/i', 'aliases' => ['Google Workspace', 'Google']],
+        ['pattern' => '/googledomains|google domains/i', 'aliases' => ['Google Domains', 'Google']],
+        ['pattern' => '/squarespace/i', 'aliases' => ['Squarespace']],
+        ['pattern' => '/protection\.outlook|mail\.protection\.outlook|outlook\.com|office365|microsoft 365|exchange online/i', 'aliases' => ['Microsoft 365', 'Office 365', 'Microsoft']],
+        ['pattern' => '/azure-dns|azure dns/i', 'aliases' => ['Microsoft Azure', 'Azure', 'Microsoft']],
+        ['pattern' => '/awsdns|route ?53|amazonaws|amazon web services/i', 'aliases' => ['Amazon Web Services', 'AWS', 'Route 53', 'Amazon']],
+        ['pattern' => '/digitalocean/i', 'aliases' => ['DigitalOcean']],
+        ['pattern' => '/domaincontrol|secureserver|godaddy/i', 'aliases' => ['GoDaddy']],
+        ['pattern' => '/registrar-servers|namecheap/i', 'aliases' => ['Namecheap']],
+        ['pattern' => '/porkbun/i', 'aliases' => ['Porkbun']],
+        ['pattern' => '/dynadot/i', 'aliases' => ['Dynadot']],
+        ['pattern' => '/tucows|opensrs/i', 'aliases' => ['Tucows', 'OpenSRS']],
+        ['pattern' => '/enom/i', 'aliases' => ['eNom']],
+        ['pattern' => '/network solutions|worldnic/i', 'aliases' => ['Network Solutions']],
+        ['pattern' => '/publicdomainregistry|pdr ltd/i', 'aliases' => ['PublicDomainRegistry', 'PDR']],
+        ['pattern' => '/key-systems/i', 'aliases' => ['Key-Systems']],
+        ['pattern' => '/markmonitor/i', 'aliases' => ['MarkMonitor']],
+        ['pattern' => '/gandi/i', 'aliases' => ['Gandi']],
+        ['pattern' => '/ionos|1and1|1\&1/i', 'aliases' => ['IONOS', '1&1']],
+        ['pattern' => '/wixdns|wix\.com/i', 'aliases' => ['Wix']],
+        ['pattern' => '/bluehost/i', 'aliases' => ['Bluehost']],
+        ['pattern' => '/hostgator/i', 'aliases' => ['HostGator']],
+        ['pattern' => '/siteground/i', 'aliases' => ['SiteGround']],
+        ['pattern' => '/wpengine|wp engine/i', 'aliases' => ['WP Engine']],
+        ['pattern' => '/kinsta/i', 'aliases' => ['Kinsta']],
+        ['pattern' => '/flywheel/i', 'aliases' => ['Flywheel']],
+        ['pattern' => '/zoho/i', 'aliases' => ['Zoho']],
+        ['pattern' => '/proofpoint|ppe-hosted/i', 'aliases' => ['Proofpoint']],
+        ['pattern' => '/mimecast/i', 'aliases' => ['Mimecast']],
+        ['pattern' => '/barracuda/i', 'aliases' => ['Barracuda']],
+        ['pattern' => '/appriver|mailanyone|opentext/i', 'aliases' => ['AppRiver', 'OpenText']],
+        ['pattern' => '/protonmail|proton\.me/i', 'aliases' => ['Proton Mail', 'Proton']],
+        ['pattern' => '/mailgun/i', 'aliases' => ['Mailgun']],
+        ['pattern' => '/sendgrid/i', 'aliases' => ['SendGrid']],
+        ['pattern' => '/fastmail/i', 'aliases' => ['Fastmail']],
+    ];
+
+    foreach ($provider_patterns as $provider) {
+        if (preg_match($provider['pattern'], $text)) {
+            return $provider['aliases'];
+        }
+    }
+
+    return [];
+}
+
+function getDomainRegistrarTextFromWhois($whois)
+{
+    if (empty($whois)) {
+        return '';
+    }
+
+    $patterns = [
+        '/Registrar:\s*(.+)/i',
+        '/Sponsoring Registrar:\s*(.+)/i',
+        '/Registrar Name:\s*(.+)/i',
+        '/Registrar Organization:\s*(.+)/i',
+        '/Registrar IANA ID:\s*(.+)/i',
+    ];
+
+    foreach ($patterns as $pattern) {
+        if (preg_match($pattern, $whois, $matches)) {
+            return trim($matches[1]);
+        }
+    }
+
+    return '';
+}
+
+function getDomainVendorAutoMap($client_id, $domain_name, $records)
+{
+    $client_id = intval($client_id);
+    $records = is_array($records) ? $records : [];
+
+    $whois = strval($records['whois'] ?? '');
+    $ns = strval($records['ns'] ?? '');
+    $mx = strval($records['mx'] ?? '');
+    $a = strval($records['a'] ?? '');
+
+    $registrar_text = getDomainRegistrarTextFromWhois($whois);
+    $registrar_aliases = getDomainProviderAliasesFromText($registrar_text ?: $whois, 'registrar');
+    $dns_aliases = getDomainProviderAliasesFromText($ns, 'dns');
+    $mail_aliases = getDomainProviderAliasesFromText($mx, 'mail');
+    $web_aliases = getDomainProviderAliasesFromText($a, 'web');
+
+    return [
+        'registrar' => findDomainVendorIdByAliases($client_id, $registrar_aliases, true, 'registrar'),
+        'dnshost' => findDomainVendorIdByAliases($client_id, $dns_aliases, true, 'DNS host'),
+        'mailhost' => findDomainVendorIdByAliases($client_id, $mail_aliases, true, 'mail host'),
+        'webhost' => findDomainVendorIdByAliases($client_id, $web_aliases, true, 'web host'),
+    ];
+}
+
+function getDomainExpirationDate($domain) {
+    if (!filter_var($domain, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) || !checkdnsrr($domain, 'SOA')) {
+        return null;
+    }
+
+    // Try WHOIS first. If the local whois client cannot resolve a registry server, fall back to RDAP.
+    $whois = getDomainWhoisText($domain);
+    $expire_date = parseDomainExpirationFromWhois($whois);
+    if ($expire_date) {
+        return $expire_date;
+    }
+
+    $rdap = getDomainRdapData($domain);
+    $expire_date = parseDomainExpirationFromRdap($rdap);
+    if ($expire_date) {
+        return $expire_date;
+    }
+
+    return null;
 }
 
 function validateWhitelabelKey($key)
@@ -1469,16 +1993,284 @@ function customAction($trigger, $entity) {
     chdir($original_dir); // Restore original working directory
 }
 
+
+function notificationEventSuffix($type, $details = '') {
+    $type_lc = strtolower((string)$type);
+    $details_lc = strtolower((string)$details);
+
+    if ($type_lc === 'cron' && str_contains($details_lc, 'successfully executed')) {
+        return 'cron_success';
+    }
+    if (in_array($type, ['Cron', 'Cron Failure', 'System Health'], true)) return 'cron_failure';
+    if ($type === 'Email Parser Health') return 'email_parser_health';
+    if (in_array($type, ['Mail Queue Health', 'Mail'], true)) return 'mail_queue_health';
+    if ($type === 'Domain Refresh Completed') return 'domain_refresh_success';
+    if (in_array($type, ['Domain Refresh Failed', 'Domain Refresh Health'], true)) return 'domain_refresh_failure';
+    if ($type === 'Certificate Refresh Completed') return 'certificate_refresh_success';
+    if (in_array($type, ['Certificate Refresh Failed', 'Certificate Refresh Health'], true)) return 'certificate_refresh_failure';
+    if ($type === 'Backup Completed') return 'backup_success';
+    if ($type === 'Backup Failed') return 'backup_failure';
+    if ($type === 'Backup') {
+        return (str_contains($type_lc, 'fail') || str_contains($type_lc, 'error')) ? 'backup_failure' : 'backup_success';
+    }
+    if ($type === 'Domain Expiring') return 'domain_expire';
+    if ($type === 'Certificate Expiring') return 'certificate_expire';
+    if ($type === 'Asset Warranty Expiring') return 'asset_warranty_expire';
+    if ($type === 'Pending Tickets') return 'pending_ticket';
+    if ($type === 'Ticket SLA') return 'ticket_sla';
+    if ($type === 'Ticket Reopened') return 'ticket_reopened';
+    if ($type === 'High Priority Ticket') return 'high_priority_ticket';
+    if ($type === 'Ticket') return 'ticket';
+    if ($type === 'Recurring Ticket') return 'recurring_ticket';
+    if ($type === 'Task') return 'task';
+    if ($type === 'Payment Failure') return 'payment_failure';
+    if ($type === 'Autopay Failure') return 'autopay_failure';
+    if ($type === 'Quote') return 'quote';
+    if (in_array($type, ['Invoice', 'Invoice Late Charge', 'Invoice Overdue', 'Invoice Paid', 'Payment', 'Recurring Sent', 'Expense'], true)) return 'billing';
+    if ($type === 'Update Available' || $type === 'Update') return 'update_available';
+    if ($type === 'Update Completed') return 'update_success';
+    if ($type === 'Update Failed') return 'update_failure';
+    if (in_array($type, ['Security', 'Login'], true)) return 'security';
+    if ($type === 'API Key') return 'api_key';
+    if (in_array($type, ['Admin', 'Settings', 'User', 'Role'], true)) return 'admin';
+    if ($type === 'Mail Failure') return 'mail_failure';
+    return 'system';
+}
+
+function notificationSettingEnabled($column) {
+    global $mysqli;
+
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $column)) {
+        return false;
+    }
+
+    $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT `$column` AS enabled FROM settings WHERE company_id = 1 LIMIT 1"));
+    return intval($row['enabled'] ?? 0) === 1;
+}
+
+function notificationGetSettingValue($column, $default = '') {
+    global $mysqli;
+
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $column)) {
+        return $default;
+    }
+
+    $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT `$column` AS value FROM settings WHERE company_id = 1 LIMIT 1"));
+    return $row['value'] ?? $default;
+}
+
+function notificationParseCsvEmails($csv) {
+    $emails = [];
+    foreach (preg_split('/[,;\s]+/', (string)$csv) as $email) {
+        $email = trim($email);
+        if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $emails[strtolower($email)] = $email;
+        }
+    }
+    return array_values($emails);
+}
+
+function notificationGetTechEmailRecipients() {
+    global $mysqli;
+
+    $recipients = notificationParseCsvEmails(notificationGetSettingValue('config_notification_tech_email_recipients', ''));
+
+    if (empty($recipients)) {
+        $fallback = notificationGetSettingValue('config_ticket_new_ticket_notification_email', '');
+        $recipients = notificationParseCsvEmails($fallback);
+    }
+
+    if (empty($recipients)) {
+        $sql = mysqli_query($mysqli, "SELECT user_email FROM users WHERE user_type = 1 AND user_status = 1 AND user_archived_at IS NULL AND user_email <> ''");
+        while ($row = mysqli_fetch_assoc($sql)) {
+            $email = trim((string)$row['user_email']);
+            if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $recipients[strtolower($email)] = $email;
+            }
+        }
+        $recipients = array_values($recipients);
+    }
+
+    return $recipients;
+}
+
+function notificationGetClientEmailRecipients($client_id, $suffix) {
+    global $mysqli;
+
+    $client_id = intval($client_id);
+    if ($client_id <= 0) {
+        return [];
+    }
+
+    $recipients = [];
+    $role_field = 'contact_technical';
+    if (in_array($suffix, ['billing', 'quote', 'payment_failure', 'autopay_failure'], true)) {
+        $role_field = 'contact_billing';
+    }
+
+    $sql = mysqli_query($mysqli, "SELECT contact_name, contact_email FROM contacts WHERE contact_client_id = $client_id AND contact_archived_at IS NULL AND $role_field = 1 AND contact_email <> ''");
+    while ($row = mysqli_fetch_assoc($sql)) {
+        $email = trim((string)$row['contact_email']);
+        if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $recipients[strtolower($email)] = ['email' => $email, 'name' => (string)$row['contact_name']];
+        }
+    }
+
+    if (empty($recipients)) {
+        $sql = mysqli_query($mysqli, "SELECT contact_name, contact_email FROM contacts WHERE contact_client_id = $client_id AND contact_archived_at IS NULL AND contact_primary = 1 AND contact_email <> '' LIMIT 10");
+        while ($row = mysqli_fetch_assoc($sql)) {
+            $email = trim((string)$row['contact_email']);
+            if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $recipients[strtolower($email)] = ['email' => $email, 'name' => (string)$row['contact_name']];
+            }
+        }
+    }
+
+    return array_values($recipients);
+}
+
+function notificationSendEmails($recipient_entries, $subject, $body, $is_assoc = false) {
+    global $mysqli;
+
+    $settings = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT config_mail_from_email, config_mail_from_name, config_base_url FROM settings WHERE company_id = 1 LIMIT 1"));
+    $from = (string)($settings['config_mail_from_email'] ?? '');
+    $from_name = (string)($settings['config_mail_from_name'] ?? 'ITFlow');
+
+    if (empty($from) || empty($recipient_entries)) {
+        return;
+    }
+
+    $data = [];
+    foreach ($recipient_entries as $entry) {
+        if ($is_assoc) {
+            $email = $entry['email'] ?? '';
+            $name = $entry['name'] ?? '';
+        } else {
+            $email = $entry;
+            $name = '';
+        }
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            continue;
+        }
+        $data[] = [
+            'from' => $from,
+            'from_name' => $from_name,
+            'recipient' => $email,
+            'recipient_name' => $name,
+            'subject' => $subject,
+            'body' => $body,
+        ];
+    }
+
+    if (!empty($data)) {
+        addToMailQueue($data);
+    }
+}
+
+function notificationCreateTicketOncePerDay($type, $details, $action = null, $client_id = 0, $entity_id = 0) {
+    global $mysqli;
+
+    $client_id = intval($client_id);
+    $entity_id = intval($entity_id);
+    $type_clean = sanitizeInput(substr((string)$type, 0, 80));
+    $subject = sanitizeInput(substr("Notification: $type_clean", 0, 255));
+    $details_clean = sanitizeInput((string)$details);
+    $action_clean = sanitizeInput((string)$action);
+    $dedupe = mysqli_real_escape_string($mysqli, substr("$type|$details|$client_id|$entity_id", 0, 500));
+
+    $existing = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT ticket_id FROM tickets WHERE ticket_subject = '$subject' AND ticket_details LIKE '%$dedupe%' AND DATE(ticket_created_at) = CURDATE() LIMIT 1"));
+    if ($existing) {
+        return;
+    }
+
+    $settings = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT config_ticket_prefix, config_ticket_next_number, config_ticket_default_billable FROM settings WHERE company_id = 1 LIMIT 1"));
+    $ticket_prefix = sanitizeInput($settings['config_ticket_prefix'] ?? 'TCK-');
+    $billable = intval($settings['config_ticket_default_billable'] ?? 0);
+
+    mysqli_query($mysqli, "UPDATE settings SET config_ticket_next_number = LAST_INSERT_ID(config_ticket_next_number), config_ticket_next_number = config_ticket_next_number + 1 WHERE company_id = 1");
+    $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT LAST_INSERT_ID() AS ticket_number"));
+    $ticket_number = intval($row['ticket_number'] ?? 0);
+    if ($ticket_number <= 0) {
+        $ticket_number = time();
+    }
+
+    $priority = str_contains(strtolower($type_clean . ' ' . $details_clean), 'fail') || str_contains(strtolower($type_clean . ' ' . $details_clean), 'critical') ? 'High' : 'Medium';
+    $url_key = randomString(156);
+    $ticket_details = mysqli_real_escape_string($mysqli, "Automated notification ticket.\n\n$type_clean\n\n$details_clean\n\nAction: $action_clean\n\nDedupe: $dedupe");
+
+    mysqli_query($mysqli, "INSERT INTO tickets SET ticket_prefix = '$ticket_prefix', ticket_number = $ticket_number, ticket_source = 'System', ticket_subject = '$subject', ticket_details = '$ticket_details', ticket_priority = '$priority', ticket_status = 1, ticket_billable = $billable, ticket_created_by = 0, ticket_url_key = '$url_key', ticket_client_id = $client_id");
+}
+
+function notificationDispatchChannels($type, $details, $action = null, $client_id = 0, $entity_id = 0) {
+    $suffix = notificationEventSuffix($type, $details);
+
+    $subject = "ITFlow Notification: " . substr((string)$type, 0, 160);
+    $body = "Hello,<br><br>ITFlow generated the following notification:<br><br><strong>" . htmlspecialchars((string)$type, ENT_QUOTES, 'UTF-8') . "</strong><br>" . nl2br(htmlspecialchars((string)$details, ENT_QUOTES, 'UTF-8'));
+    if (!empty($action)) {
+        $body .= "<br><br>Action: " . htmlspecialchars((string)$action, ENT_QUOTES, 'UTF-8');
+    }
+    $body .= "<br><br>--<br>ITFlow";
+
+    if (notificationSettingEnabled('config_tech_email_notify_' . $suffix . '_enable')) {
+        notificationSendEmails(notificationGetTechEmailRecipients(), $subject, $body, false);
+    }
+
+    if (notificationSettingEnabled('config_client_email_notify_' . $suffix . '_enable')) {
+        notificationSendEmails(notificationGetClientEmailRecipients($client_id, $suffix), $subject, $body, true);
+    }
+
+    if (notificationSettingEnabled('config_create_ticket_notify_' . $suffix . '_enable')) {
+        notificationCreateTicketOncePerDay($type, $details, $action, $client_id, $entity_id);
+    }
+}
+
+function notificationSanitizeDaysCsv($value, $default = '45,7,1') {
+    $days = [];
+    foreach (preg_split('/[^0-9]+/', (string)$value) as $part) {
+        if ($part === '') {
+            continue;
+        }
+        $day = intval($part);
+        if ($day > 0 && $day <= 365) {
+            $days[$day] = $day;
+        }
+    }
+    if (empty($days)) {
+        foreach (explode(',', $default) as $part) {
+            $day = intval($part);
+            if ($day > 0 && $day <= 365) {
+                $days[$day] = $day;
+            }
+        }
+    }
+    rsort($days, SORT_NUMERIC);
+    return implode(',', $days);
+}
+
+function notificationDaysArray($csv, $default = '45,7,1') {
+    $csv = notificationSanitizeDaysCsv($csv, $default);
+    return array_map('intval', explode(',', $csv));
+}
+
 function appNotify($type, $details, $action = null, $client_id = 0, $entity_id = 0) {
     global $mysqli;
 
+    $raw_type = (string)$type;
+    $raw_details = (string)$details;
+    $raw_action = $action;
+    $client_id = intval($client_id);
+    $entity_id = intval($entity_id);
+
+    notificationDispatchChannels($raw_type, $raw_details, $raw_action, $client_id, $entity_id);
+
     if (is_null($action)) {
-        $action = "NULL"; // Without quotes for SQL NULL
+        $action_sql = "NULL";
+    } else {
+        $action_sql = "'" . mysqli_real_escape_string($mysqli, substr($action, 0, 250)) . "'";
     }
 
-    $type = substr($type, 0, 200);
-    $details = substr($details, 0, 1000);
-    $action = substr($action, 0, 250);
+    $type = mysqli_real_escape_string($mysqli, substr($raw_type, 0, 200));
+    $details = mysqli_real_escape_string($mysqli, substr($raw_details, 0, 1000));
 
     $sql = mysqli_query($mysqli, "SELECT user_id FROM users
         WHERE user_type = 1 AND user_status = 1 AND user_archived_at IS NULL
@@ -1486,9 +2278,64 @@ function appNotify($type, $details, $action = null, $client_id = 0, $entity_id =
 
     while ($row = mysqli_fetch_assoc($sql)) {
         $user_id = intval($row['user_id']);
-
-        mysqli_query($mysqli, "INSERT INTO notifications SET notification_type = '$type', notification = '$details', notification_action = '$action', notification_client_id = $client_id, notification_entity_id = $entity_id, notification_user_id = $user_id");
+        mysqli_query($mysqli, "INSERT INTO notifications SET notification_type = '$type', notification = '$details', notification_action = $action_sql, notification_client_id = $client_id, notification_entity_id = $entity_id, notification_user_id = $user_id");
     }
+}
+
+function appNotifyOncePerDay($type, $details, $action = null, $client_id = 0, $entity_id = 0) {
+    global $mysqli;
+
+    $type_sql = mysqli_real_escape_string($mysqli, substr($type, 0, 200));
+    $details_sql = mysqli_real_escape_string($mysqli, substr($details, 0, 1000));
+    $client_id = intval($client_id);
+    $entity_id = intval($entity_id);
+
+    $existing = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT notification_id FROM notifications
+        WHERE notification_type = '$type_sql'
+        AND notification = '$details_sql'
+        AND notification_client_id = $client_id
+        AND notification_entity_id = $entity_id
+        AND DATE(notification_timestamp) = CURDATE()
+        LIMIT 1"));
+
+    if (!$existing) {
+        appNotify($type, $details, $action, $client_id, $entity_id);
+    }
+}
+
+function appNotifyForAppLog($category, $type, $details) {
+    $type_lc = strtolower((string)$type);
+    if (!in_array($type_lc, ['error', 'warning', 'warn', 'critical', 'fatal'], true)) {
+        return;
+    }
+
+    $category_lc = strtolower((string)$category);
+    $notification_type = 'System Health';
+    $action = '/admin/app_logs.php';
+
+    if (str_contains($category_lc, 'email-parser')) {
+        $notification_type = 'Email Parser Health';
+    } elseif (str_contains($category_lc, 'mail-queue') || $category_lc === 'mail') {
+        $notification_type = 'Mail Queue Health';
+        $action = '/admin/mail_queue.php';
+    } elseif (str_contains($category_lc, 'domain-refresher') || str_contains($category_lc, 'domain-vendor')) {
+        $notification_type = 'Domain Refresh Failed';
+    } elseif (str_contains($category_lc, 'certificate-refresher')) {
+        $notification_type = 'Certificate Refresh Failed';
+    } elseif (str_contains($category_lc, 'backup')) {
+        $notification_type = 'Backup Failed';
+        $action = '/admin/backup.php';
+    } elseif (str_contains($category_lc, 'stripe') || str_contains($category_lc, 'payment')) {
+        $notification_type = 'Payment Failure';
+    } elseif (str_contains($category_lc, 'security') || str_contains($category_lc, 'login')) {
+        $notification_type = 'Security';
+    } elseif (str_contains($category_lc, 'update')) {
+        $notification_type = 'Update Failed';
+    } elseif (str_contains($category_lc, 'cron')) {
+        $notification_type = 'Cron Failure';
+    }
+
+    appNotifyOncePerDay($notification_type, "$category: $details", $action);
 }
 
 function logAction($type, $action, $description, $client_id = 0, $entity_id = 0) {
@@ -1512,10 +2359,19 @@ function logAction($type, $action, $description, $client_id = 0, $entity_id = 0)
 function logApp($category, $type, $details) {
     global $mysqli;
 
-    $category = mysqli_real_escape_string($mysqli, substr($category, 0, 200));
-    $details = mysqli_real_escape_string($mysqli, substr($details, 0, 1000));
+    $category_clean = substr((string)$category, 0, 200);
+    $type_clean = substr((string)$type, 0, 50);
+    $details_clean = substr((string)$details, 0, 1000);
 
-    mysqli_query($mysqli, "INSERT INTO app_logs SET app_log_category = '$category', app_log_type = '$type', app_log_details = '$details'");
+    $category_sql = mysqli_real_escape_string($mysqli, $category_clean);
+    $type_sql = mysqli_real_escape_string($mysqli, $type_clean);
+    $details_sql = mysqli_real_escape_string($mysqli, $details_clean);
+
+    mysqli_query($mysqli, "INSERT INTO app_logs SET app_log_category = '$category_sql', app_log_type = '$type_sql', app_log_details = '$details_sql'");
+
+    if (function_exists('appNotifyForAppLog')) {
+        appNotifyForAppLog($category_clean, $type_clean, $details_clean);
+    }
 }
 
 function logAuth($status, $details) {
@@ -2080,3 +2936,81 @@ function validateDate($date) {
     }
     return date('Y-m-d'); // Fallback
 }
+
+
+/**
+ * ITFLOW_PHASE1_MAIL_INFRA_HELPERS
+ *
+ * Neutral mail infrastructure helper functions.
+ * These replace site-specific hard-coded support/group addresses with Admin-configured settings.
+ */
+if (!function_exists('itflowNormalizeEmailAddress')) {
+    function itflowNormalizeEmailAddress($value): string {
+        $value = trim((string)$value);
+        if ($value === '') {
+            return '';
+        }
+
+        if (preg_match('/<([^<>]+)>/', $value, $match)) {
+            $value = $match[1];
+        }
+
+        $value = strtolower(trim($value, " \t\n\r\0\x0B<>\"'.,;"));
+        return filter_var($value, FILTER_VALIDATE_EMAIL) ? $value : '';
+    }
+}
+
+if (!function_exists('itflowConfiguredMailInfrastructureAddresses')) {
+    function itflowConfiguredMailInfrastructureAddresses(): array {
+        global $config_mail_infrastructure_addresses,
+               $config_imap_username,
+               $config_smtp_username,
+               $config_ticket_from_email,
+               $config_mail_from_email;
+
+        $raw = [];
+
+        foreach ([
+            $config_imap_username ?? '',
+            $config_smtp_username ?? '',
+            $config_ticket_from_email ?? '',
+            $config_mail_from_email ?? '',
+        ] as $email) {
+            if ((string)$email !== '') {
+                $raw[] = (string)$email;
+            }
+        }
+
+        $configured = (string)($config_mail_infrastructure_addresses ?? '');
+        if ($configured !== '') {
+            foreach (preg_split('/[\r\n,;]+/', $configured) as $email) {
+                $email = trim((string)$email);
+                if ($email !== '') {
+                    $raw[] = $email;
+                }
+            }
+        }
+
+        $out = [];
+        foreach ($raw as $email) {
+            $email = itflowNormalizeEmailAddress($email);
+            if ($email !== '') {
+                $out[$email] = true;
+            }
+        }
+
+        return array_keys($out);
+    }
+}
+
+if (!function_exists('itflowIsMailInfrastructureAddress')) {
+    function itflowIsMailInfrastructureAddress($email): bool {
+        $email = itflowNormalizeEmailAddress($email);
+        if ($email === '') {
+            return false;
+        }
+
+        return in_array($email, itflowConfiguredMailInfrastructureAddresses(), true);
+    }
+}
+

@@ -13,7 +13,7 @@ if (!defined("LATEST_DATABASE_VERSION") || !defined("CURRENT_DATABASE_VERSION") 
 }
 
 // Check if we need an update
-if (LATEST_DATABASE_VERSION > CURRENT_DATABASE_VERSION) {
+if (version_compare(LATEST_DATABASE_VERSION, CURRENT_DATABASE_VERSION, '>')) {
 
     // We need updates!
 
@@ -4394,12 +4394,829 @@ if (LATEST_DATABASE_VERSION > CURRENT_DATABASE_VERSION) {
 
     }
 
-    // if (CURRENT_DATABASE_VERSION == '2.4.4') {
-    //     // Insert queries here required to update to DB version 2.4.5
-    //     // Then, update the database to the next sequential version
-    //     mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.5'");
-    // }
+    if (CURRENT_DATABASE_VERSION == '2.4.4') {
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_ticket_timer_autostart`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_message` TEXT DEFAULT NULL AFTER `config_ticket_resolved_feedback_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_review_url` VARCHAR(500) DEFAULT NULL AFTER `config_ticket_resolved_feedback_message`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_review_text` VARCHAR(100) DEFAULT 'Leave a Review' AFTER `config_ticket_resolved_feedback_review_url`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_private_url` VARCHAR(500) DEFAULT NULL AFTER `config_ticket_resolved_feedback_review_text`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_private_text` VARCHAR(100) DEFAULT 'Send Private Feedback' AFTER `config_ticket_resolved_feedback_private_url`");
+
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.1'");
+    }
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.1') {
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_message_enable` TINYINT(1) NOT NULL DEFAULT 1 AFTER `config_ticket_resolved_feedback_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_review_enable` TINYINT(1) NOT NULL DEFAULT 1 AFTER `config_ticket_resolved_feedback_message`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_private_enable` TINYINT(1) NOT NULL DEFAULT 1 AFTER `config_ticket_resolved_feedback_review_text`");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.2'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.2') {
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_message_order` INT(11) NOT NULL DEFAULT 10 AFTER `config_ticket_resolved_feedback_message`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_review_message` TEXT DEFAULT NULL AFTER `config_ticket_resolved_feedback_review_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_review_order` INT(11) NOT NULL DEFAULT 30 AFTER `config_ticket_resolved_feedback_review_text`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_review_button_color` VARCHAR(7) NOT NULL DEFAULT '#16a34a' AFTER `config_ticket_resolved_feedback_review_order`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_private_message` TEXT DEFAULT NULL AFTER `config_ticket_resolved_feedback_private_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_private_order` INT(11) NOT NULL DEFAULT 20 AFTER `config_ticket_resolved_feedback_private_text`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_private_button_color` VARCHAR(7) NOT NULL DEFAULT '#d97706' AFTER `config_ticket_resolved_feedback_private_order`");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.4'");
+    }
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.3') {
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.4'");
+    }
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.4') {
+        // Local hotfix: harden addToMailQueue() escaping in functions.php.
+        // No database schema changes are required for this version.
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.5'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.5') {
+        // Local UI polish: improves resolved-ticket feedback email spacing/cards.
+        // No database schema changes are required for this version.
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.6'");
+    }
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.6') {
+        // Local mail queue hardening: use prepared statements in addToMailQueue()
+        // and preserve raw ticket reply HTML for outbound public reply emails.
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.7'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.7') {
+        // Local resolved-ticket email layout: move feedback block higher in the message
+        // so it is visible before routine closure instructions and metadata.
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.8'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.8') {
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_private_heading_enable` TINYINT(1) NOT NULL DEFAULT 1 AFTER `config_ticket_resolved_feedback_private_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_private_heading` VARCHAR(150) NOT NULL DEFAULT 'Something we can improve?' AFTER `config_ticket_resolved_feedback_private_heading_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_review_heading_enable` TINYINT(1) NOT NULL DEFAULT 1 AFTER `config_ticket_resolved_feedback_review_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_review_heading` VARCHAR(150) NOT NULL DEFAULT 'Happy with our service?' AFTER `config_ticket_resolved_feedback_review_heading_enable`");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.9'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.9') {
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_private_message_enable` TINYINT(1) NOT NULL DEFAULT 1 AFTER `config_ticket_resolved_feedback_private_message`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_private_button_enable` TINYINT(1) NOT NULL DEFAULT 1 AFTER `config_ticket_resolved_feedback_private_text`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_review_message_enable` TINYINT(1) NOT NULL DEFAULT 1 AFTER `config_ticket_resolved_feedback_review_message`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD `config_ticket_resolved_feedback_review_button_enable` TINYINT(1) NOT NULL DEFAULT 1 AFTER `config_ticket_resolved_feedback_review_text`");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.10'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.10') {
+        // Local performance fix: avoid synchronous WHOIS/DNS/SSL lookups during domain add/edit.
+        // No database schema changes are required for this version.
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.11'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.11') {
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.12'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.12') {
+        // Local domain refresh improvement: use RDAP fallback when WHOIS is unavailable.
+        // No database schema changes are required for this version.
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.13'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.13') {
+        // Local domain refresh scheduler logic: hourly formula-based batch refresh.
+        // No database schema changes are required for this version.
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.14'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.14') {
+        // Local domain refresh improvement: allow per-domain vendor auto-mapping during metadata refresh.
+        mysqli_query($mysqli, "ALTER TABLE `domains` ADD COLUMN IF NOT EXISTS `domain_auto_map` TINYINT(1) NOT NULL DEFAULT 1 AFTER `domain_mailhost`");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.15'");
+    }
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.15') {
+        // Local domain refresh improvement: auto-create high-confidence vendor matches during domain auto-mapping.
+        // No database schema changes are required for this version.
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.16'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.16') {
+        // Local domain refresh improvement: allow metadata refresh to be queued and processed asynchronously.
+        mysqli_query($mysqli, "ALTER TABLE `domains` ADD COLUMN IF NOT EXISTS `domain_refresh_queued_at` DATETIME DEFAULT NULL AFTER `domain_auto_map`");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.17'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.17') {
+        // Local domain workflow improvement: optionally queue metadata refresh automatically after new domain creation.
+        // No database schema changes are required for this version.
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.18'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.18') {
+        // Local notification controls expansion: health/failure categories, admin/security categories, and threshold controls.
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notifications_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_enable_cron`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_cron_success_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notifications_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_cron_failure_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_cron_success_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_domain_expire_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_cron_failure_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_certificate_expire_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_domain_expire_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_asset_warranty_expire_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_certificate_expire_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_pending_ticket_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_asset_warranty_expire_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_ticket_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_pending_ticket_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_recurring_ticket_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_ticket_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_task_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_recurring_ticket_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_mail_failure_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_task_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_update_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_mail_failure_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_billing_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_update_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_system_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_billing_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_email_parser_health_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_system_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_mail_queue_health_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_email_parser_health_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_mail_queue_backlog_threshold` INT(11) NOT NULL DEFAULT 50 AFTER `config_app_notify_mail_queue_health_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_domain_refresh_health_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_mail_queue_backlog_threshold`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_certificate_refresh_health_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_domain_refresh_health_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_backup_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_certificate_refresh_health_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_security_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_backup_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_admin_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_security_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_ticket_sla_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_admin_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_ticket_reopened_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_ticket_sla_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_high_priority_ticket_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_ticket_reopened_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_payment_failure_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_high_priority_ticket_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_autopay_failure_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_payment_failure_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_quote_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_autopay_failure_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_api_key_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_quote_enable`");
+
+        mysqli_query($mysqli, "DROP TRIGGER IF EXISTS `notifications_filter_before_insert`");
+        mysqli_query($mysqli, "CREATE TRIGGER `notifications_filter_before_insert` BEFORE INSERT ON `notifications`
+FOR EACH ROW
+BEGIN
+    DECLARE v_master TINYINT DEFAULT 0;
+    DECLARE v_allow TINYINT DEFAULT 0;
+
+    SELECT COALESCE(config_app_notifications_enable, 0) INTO v_master FROM settings WHERE company_id = 1 LIMIT 1;
+
+    IF v_master = 0 THEN
+        SET NEW.notification_dismissed_at = NOW();
+        SET NEW.notification_dismissed_by = 0;
+    ELSE
+        IF NEW.notification_type = 'Cron' AND NEW.notification LIKE '%successfully executed%' THEN
+            SELECT COALESCE(config_app_notify_cron_success_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type IN ('Cron', 'Cron Failure') THEN
+            SELECT COALESCE(config_app_notify_cron_failure_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Email Parser Health' THEN
+            SELECT COALESCE(config_app_notify_email_parser_health_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type IN ('Mail Queue Health', 'Mail') THEN
+            SELECT COALESCE(config_app_notify_mail_queue_health_enable, config_app_notify_mail_failure_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Domain Refresh Health' THEN
+            SELECT COALESCE(config_app_notify_domain_refresh_health_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Certificate Refresh Health' THEN
+            SELECT COALESCE(config_app_notify_certificate_refresh_health_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Backup' THEN
+            SELECT COALESCE(config_app_notify_backup_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type IN ('Security', 'Login') THEN
+            SELECT COALESCE(config_app_notify_security_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'API Key' THEN
+            SELECT COALESCE(config_app_notify_api_key_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type IN ('Admin', 'Settings', 'User', 'Role') THEN
+            SELECT COALESCE(config_app_notify_admin_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Domain Expiring' THEN
+            SELECT COALESCE(config_app_notify_domain_expire_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Certificate Expiring' THEN
+            SELECT COALESCE(config_app_notify_certificate_expire_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Asset Warranty Expiring' THEN
+            SELECT COALESCE(config_app_notify_asset_warranty_expire_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Pending Tickets' THEN
+            SELECT COALESCE(config_app_notify_pending_ticket_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Ticket SLA' THEN
+            SELECT COALESCE(config_app_notify_ticket_sla_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Ticket Reopened' THEN
+            SELECT COALESCE(config_app_notify_ticket_reopened_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'High Priority Ticket' THEN
+            SELECT COALESCE(config_app_notify_high_priority_ticket_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Ticket' THEN
+            SELECT COALESCE(config_app_notify_ticket_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Recurring Ticket' THEN
+            SELECT COALESCE(config_app_notify_recurring_ticket_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Task' THEN
+            SELECT COALESCE(config_app_notify_task_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Payment Failure' THEN
+            SELECT COALESCE(config_app_notify_payment_failure_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Autopay Failure' THEN
+            SELECT COALESCE(config_app_notify_autopay_failure_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Quote' THEN
+            SELECT COALESCE(config_app_notify_quote_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type IN ('Invoice', 'Invoice Late Charge', 'Invoice Overdue', 'Invoice Paid', 'Payment', 'Recurring Sent', 'Expense') THEN
+            SELECT COALESCE(config_app_notify_billing_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Update' THEN
+            SELECT COALESCE(config_app_notify_update_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSE
+            SELECT COALESCE(config_app_notify_system_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        END IF;
+
+        IF v_allow = 0 THEN
+            SET NEW.notification_dismissed_at = NOW();
+            SET NEW.notification_dismissed_by = 0;
+        END IF;
+    END IF;
+END");
+
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.20'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.19') {
+        // Local notification controls expansion: health/failure categories, admin/security categories, and threshold controls.
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notifications_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_enable_cron`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_cron_success_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notifications_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_cron_failure_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_cron_success_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_domain_expire_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_cron_failure_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_certificate_expire_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_domain_expire_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_asset_warranty_expire_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_certificate_expire_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_pending_ticket_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_asset_warranty_expire_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_ticket_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_pending_ticket_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_recurring_ticket_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_ticket_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_task_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_recurring_ticket_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_mail_failure_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_task_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_update_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_mail_failure_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_billing_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_update_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_system_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_billing_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_email_parser_health_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_system_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_mail_queue_health_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_email_parser_health_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_mail_queue_backlog_threshold` INT(11) NOT NULL DEFAULT 50 AFTER `config_app_notify_mail_queue_health_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_domain_refresh_health_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_mail_queue_backlog_threshold`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_certificate_refresh_health_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_domain_refresh_health_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_backup_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_certificate_refresh_health_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_security_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_backup_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_admin_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_security_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_ticket_sla_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_admin_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_ticket_reopened_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_ticket_sla_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_high_priority_ticket_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_ticket_reopened_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_payment_failure_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_high_priority_ticket_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_autopay_failure_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_payment_failure_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_quote_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_autopay_failure_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_api_key_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_quote_enable`");
+
+        mysqli_query($mysqli, "DROP TRIGGER IF EXISTS `notifications_filter_before_insert`");
+        mysqli_query($mysqli, "CREATE TRIGGER `notifications_filter_before_insert` BEFORE INSERT ON `notifications`
+FOR EACH ROW
+BEGIN
+    DECLARE v_master TINYINT DEFAULT 0;
+    DECLARE v_allow TINYINT DEFAULT 0;
+
+    SELECT COALESCE(config_app_notifications_enable, 0) INTO v_master FROM settings WHERE company_id = 1 LIMIT 1;
+
+    IF v_master = 0 THEN
+        SET NEW.notification_dismissed_at = NOW();
+        SET NEW.notification_dismissed_by = 0;
+    ELSE
+        IF NEW.notification_type = 'Cron' AND NEW.notification LIKE '%successfully executed%' THEN
+            SELECT COALESCE(config_app_notify_cron_success_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type IN ('Cron', 'Cron Failure') THEN
+            SELECT COALESCE(config_app_notify_cron_failure_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Email Parser Health' THEN
+            SELECT COALESCE(config_app_notify_email_parser_health_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type IN ('Mail Queue Health', 'Mail') THEN
+            SELECT COALESCE(config_app_notify_mail_queue_health_enable, config_app_notify_mail_failure_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Domain Refresh Health' THEN
+            SELECT COALESCE(config_app_notify_domain_refresh_health_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Certificate Refresh Health' THEN
+            SELECT COALESCE(config_app_notify_certificate_refresh_health_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Backup' THEN
+            SELECT COALESCE(config_app_notify_backup_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type IN ('Security', 'Login') THEN
+            SELECT COALESCE(config_app_notify_security_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'API Key' THEN
+            SELECT COALESCE(config_app_notify_api_key_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type IN ('Admin', 'Settings', 'User', 'Role') THEN
+            SELECT COALESCE(config_app_notify_admin_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Domain Expiring' THEN
+            SELECT COALESCE(config_app_notify_domain_expire_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Certificate Expiring' THEN
+            SELECT COALESCE(config_app_notify_certificate_expire_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Asset Warranty Expiring' THEN
+            SELECT COALESCE(config_app_notify_asset_warranty_expire_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Pending Tickets' THEN
+            SELECT COALESCE(config_app_notify_pending_ticket_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Ticket SLA' THEN
+            SELECT COALESCE(config_app_notify_ticket_sla_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Ticket Reopened' THEN
+            SELECT COALESCE(config_app_notify_ticket_reopened_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'High Priority Ticket' THEN
+            SELECT COALESCE(config_app_notify_high_priority_ticket_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Ticket' THEN
+            SELECT COALESCE(config_app_notify_ticket_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Recurring Ticket' THEN
+            SELECT COALESCE(config_app_notify_recurring_ticket_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Task' THEN
+            SELECT COALESCE(config_app_notify_task_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Payment Failure' THEN
+            SELECT COALESCE(config_app_notify_payment_failure_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Autopay Failure' THEN
+            SELECT COALESCE(config_app_notify_autopay_failure_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Quote' THEN
+            SELECT COALESCE(config_app_notify_quote_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type IN ('Invoice', 'Invoice Late Charge', 'Invoice Overdue', 'Invoice Paid', 'Payment', 'Recurring Sent', 'Expense') THEN
+            SELECT COALESCE(config_app_notify_billing_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Update' THEN
+            SELECT COALESCE(config_app_notify_update_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSE
+            SELECT COALESCE(config_app_notify_system_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        END IF;
+
+        IF v_allow = 0 THEN
+            SET NEW.notification_dismissed_at = NOW();
+            SET NEW.notification_dismissed_by = 0;
+        END IF;
+    END IF;
+END");
+
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.20'");
+    }
+
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.20') {
+        // Local notification settings polish: keep the existing notification matrix layout while making the in-app controls real.
+        // No schema changes are required; v2.4.4.20 added the notification control columns and database filter trigger.
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.21'");
+    }
+
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.21') {
+        // Local notification settings polish: remove the informational banner from the notification matrix page.
+        // No schema changes are required.
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.22'");
+    }
+
+
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.22') {
+        // Split broad notification categories into success/failure rows so admins can enable actionable failures without success spam.
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_backup_success_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_backup_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_backup_failure_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_backup_success_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_domain_refresh_success_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_domain_refresh_health_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_domain_refresh_failure_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_domain_refresh_success_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_certificate_refresh_success_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_certificate_refresh_health_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_certificate_refresh_failure_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_certificate_refresh_success_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_update_available_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_update_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_update_success_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_update_available_enable`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_update_failure_enable` TINYINT(1) NOT NULL DEFAULT 0 AFTER `config_app_notify_update_success_enable`");
+
+        mysqli_query($mysqli, "DROP TRIGGER IF EXISTS `notifications_filter_before_insert`");
+        mysqli_query($mysqli, "CREATE TRIGGER `notifications_filter_before_insert` BEFORE INSERT ON `notifications`
+FOR EACH ROW
+BEGIN
+    DECLARE v_master TINYINT DEFAULT 0;
+    DECLARE v_allow TINYINT DEFAULT 0;
+
+    SELECT COALESCE(config_app_notifications_enable, 0) INTO v_master FROM settings WHERE company_id = 1 LIMIT 1;
+
+    IF v_master = 0 THEN
+        SET NEW.notification_dismissed_at = NOW();
+        SET NEW.notification_dismissed_by = 0;
+    ELSE
+        IF NEW.notification_type = 'Cron' AND NEW.notification LIKE '%successfully executed%' THEN
+            SELECT COALESCE(config_app_notify_cron_success_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type IN ('Cron', 'Cron Failure') THEN
+            SELECT COALESCE(config_app_notify_cron_failure_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Email Parser Health' THEN
+            SELECT COALESCE(config_app_notify_email_parser_health_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type IN ('Mail Queue Health', 'Mail') THEN
+            SELECT COALESCE(config_app_notify_mail_queue_health_enable, config_app_notify_mail_failure_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Domain Refresh Completed' THEN
+            SELECT COALESCE(config_app_notify_domain_refresh_success_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type IN ('Domain Refresh Failed', 'Domain Refresh Health') THEN
+            SELECT COALESCE(config_app_notify_domain_refresh_failure_enable, config_app_notify_domain_refresh_health_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Certificate Refresh Completed' THEN
+            SELECT COALESCE(config_app_notify_certificate_refresh_success_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type IN ('Certificate Refresh Failed', 'Certificate Refresh Health') THEN
+            SELECT COALESCE(config_app_notify_certificate_refresh_failure_enable, config_app_notify_certificate_refresh_health_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Backup Completed' THEN
+            SELECT COALESCE(config_app_notify_backup_success_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Backup Failed' THEN
+            SELECT COALESCE(config_app_notify_backup_failure_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Backup' THEN
+            IF LOWER(NEW.notification) LIKE '%fail%' OR LOWER(NEW.notification) LIKE '%error%' THEN
+                SELECT COALESCE(config_app_notify_backup_failure_enable, config_app_notify_backup_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+            ELSE
+                SELECT COALESCE(config_app_notify_backup_success_enable, config_app_notify_backup_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+            END IF;
+        ELSEIF NEW.notification_type IN ('Security', 'Login') THEN
+            SELECT COALESCE(config_app_notify_security_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'API Key' THEN
+            SELECT COALESCE(config_app_notify_api_key_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type IN ('Admin', 'Settings', 'User', 'Role') THEN
+            SELECT COALESCE(config_app_notify_admin_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Domain Expiring' THEN
+            SELECT COALESCE(config_app_notify_domain_expire_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Certificate Expiring' THEN
+            SELECT COALESCE(config_app_notify_certificate_expire_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Asset Warranty Expiring' THEN
+            SELECT COALESCE(config_app_notify_asset_warranty_expire_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Pending Tickets' THEN
+            SELECT COALESCE(config_app_notify_pending_ticket_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Ticket SLA' THEN
+            SELECT COALESCE(config_app_notify_ticket_sla_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Ticket Reopened' THEN
+            SELECT COALESCE(config_app_notify_ticket_reopened_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'High Priority Ticket' THEN
+            SELECT COALESCE(config_app_notify_high_priority_ticket_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Ticket' THEN
+            SELECT COALESCE(config_app_notify_ticket_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Recurring Ticket' THEN
+            SELECT COALESCE(config_app_notify_recurring_ticket_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Task' THEN
+            SELECT COALESCE(config_app_notify_task_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Payment Failure' THEN
+            SELECT COALESCE(config_app_notify_payment_failure_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Autopay Failure' THEN
+            SELECT COALESCE(config_app_notify_autopay_failure_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Quote' THEN
+            SELECT COALESCE(config_app_notify_quote_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type IN ('Invoice', 'Invoice Late Charge', 'Invoice Overdue', 'Invoice Paid', 'Payment', 'Recurring Sent', 'Expense') THEN
+            SELECT COALESCE(config_app_notify_billing_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Update Available' THEN
+            SELECT COALESCE(config_app_notify_update_available_enable, config_app_notify_update_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Update Completed' THEN
+            SELECT COALESCE(config_app_notify_update_success_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Update Failed' THEN
+            SELECT COALESCE(config_app_notify_update_failure_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSEIF NEW.notification_type = 'Update' THEN
+            SELECT COALESCE(config_app_notify_update_available_enable, config_app_notify_update_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        ELSE
+            SELECT COALESCE(config_app_notify_system_enable, 0) INTO v_allow FROM settings WHERE company_id = 1 LIMIT 1;
+        END IF;
+
+        IF v_allow = 0 THEN
+            SET NEW.notification_dismissed_at = NOW();
+            SET NEW.notification_dismissed_by = 0;
+        END IF;
+    END IF;
+END");
+
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.23'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.23') {
+        // ITFlow migration v2.4.4.24 - notification matrix polish, thresholds, and channel controls
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notifications_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_cron_success_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_cron_failure_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_cron_failure_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_create_ticket_notify_cron_failure_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_update_available_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_update_available_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_update_success_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_update_failure_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_update_failure_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_create_ticket_notify_update_failure_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_system_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_backup_success_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_backup_failure_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_backup_failure_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_create_ticket_notify_backup_failure_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_email_parser_health_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_email_parser_health_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_create_ticket_notify_email_parser_health_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_mail_queue_health_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_mail_queue_health_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_create_ticket_notify_mail_queue_health_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_domain_refresh_success_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_domain_refresh_failure_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_domain_refresh_failure_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_create_ticket_notify_domain_refresh_failure_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_certificate_refresh_success_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_certificate_refresh_failure_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_certificate_refresh_failure_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_create_ticket_notify_certificate_refresh_failure_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_security_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_security_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_admin_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_admin_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_api_key_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_api_key_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_domain_expire_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_domain_expire_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_client_email_notify_domain_expire_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_create_ticket_notify_domain_expire_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_certificate_expire_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_certificate_expire_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_client_email_notify_certificate_expire_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_create_ticket_notify_certificate_expire_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_asset_warranty_expire_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_asset_warranty_expire_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_client_email_notify_asset_warranty_expire_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_create_ticket_notify_asset_warranty_expire_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_ticket_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_pending_ticket_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_pending_ticket_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_recurring_ticket_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_task_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_ticket_sla_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_ticket_sla_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_create_ticket_notify_ticket_sla_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_ticket_reopened_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_ticket_reopened_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_high_priority_ticket_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_high_priority_ticket_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_create_ticket_notify_high_priority_ticket_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_billing_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_client_email_notify_billing_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_payment_failure_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_payment_failure_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_autopay_failure_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_autopay_failure_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_quote_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_quote_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_client_email_notify_quote_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_app_notify_mail_failure_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_tech_email_notify_mail_failure_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_notification_domain_expire_days` VARCHAR(100) NOT NULL DEFAULT '45,7,1'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_notification_certificate_expire_days` VARCHAR(100) NOT NULL DEFAULT '45,7,1'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_notification_asset_warranty_expire_days` VARCHAR(100) NOT NULL DEFAULT '45,7,1'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_notification_tech_email_recipients` TEXT NULL DEFAULT NULL");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.24'");
+    }
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.24') {
+        // ITFlow migration v2.4.4.25 - notification bulk action UI polish
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.25'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.43') {
+        // ITFlow migration v2.4.4.44 - sidebar brand/menu separation border
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.44'");
+    }
+
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.44') {
+        // ITFlow migration v2.4.4.45 - phantom scrollbar / sidebar overflow polish
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.45'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.45') {
+        // ITFlow migration v2.4.4.46 - AdminLTE content-wrapper height normalization / phantom scrollbar fix
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.46'");
+    }
+
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.46') {
+        // ITFlow migration v2.4.4.47 - PushMenu collapsed sidebar brand/layout normalization
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.47'");
+    }
+
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.47') {
+        // ITFlow migration v2.4.4.48 - corrective sidebar layout and content height stabilization
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.48'");
+    }
+
+
 
 } else {
     // Up-to-date
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.40') {
+        // ITFlow migration v2.4.4.41 - sidebar brand/nav margin fix
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.41'");
+    }
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.42') {
+        // ITFlow migration v2.4.4.43 - Internal Workspace client-side Back behavior
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.43'");
+    }
+
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.48') {
+        // ITFlow migration v2.4.4.49 - viewport-scoped content layout / phantom scrollbar hard fix
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.49'");
+    }
+
 }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.25') {
+        // ITFlow migration v2.4.4.26 - notification bulk action label polish
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.26'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.26') {
+        // ITFlow migration v2.4.4.27 - notification bulk dropdown label fix
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.27'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.27') {
+        // ITFlow migration v2.4.4.28 - Internal Workspace menu/settings
+        mysqli_query($mysqli, "ALTER TABLE `clients` ADD COLUMN IF NOT EXISTS `client_internal` TINYINT(1) NOT NULL DEFAULT 0 AFTER `client_lead`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_internal_workspace_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_internal_client_id` INT(11) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_internal_workspace_name` VARCHAR(100) NOT NULL DEFAULT 'Internal'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_internal_hide_from_clients` TINYINT(1) NOT NULL DEFAULT 1");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.28'");
+    }
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.28') {
+        // ITFlow migration v2.4.4.29 - Internal Workspace settings UI visibility fix
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.29'");
+    }
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.29') {
+        // ITFlow migration v2.4.4.30 - Create Internal Workspace organization from Defaults
+        mysqli_query($mysqli, "ALTER TABLE `clients` ADD COLUMN IF NOT EXISTS `client_internal` TINYINT(1) NOT NULL DEFAULT 0 AFTER `client_lead`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_internal_workspace_enable` TINYINT(1) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_internal_client_id` INT(11) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_internal_workspace_name` VARCHAR(100) NOT NULL DEFAULT 'Internal'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_internal_hide_from_clients` TINYINT(1) NOT NULL DEFAULT 1");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.30'");
+    }
+
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.30') {
+        // ITFlow migration v2.4.4.31 - Internal Workspace enabled by default and self-service setup page
+        mysqli_query($mysqli, "ALTER TABLE `clients` ADD COLUMN IF NOT EXISTS `client_internal` TINYINT(1) NOT NULL DEFAULT 0 AFTER `client_lead`");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_internal_workspace_enable` TINYINT(1) NOT NULL DEFAULT 1");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_internal_client_id` INT(11) NOT NULL DEFAULT 0");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_internal_workspace_name` VARCHAR(100) NOT NULL DEFAULT 'Internal'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_internal_hide_from_clients` TINYINT(1) NOT NULL DEFAULT 1");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ALTER `config_internal_workspace_enable` SET DEFAULT 1");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_internal_workspace_enable` = 1 WHERE `config_internal_workspace_enable` = 0");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.31'");
+    }
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.31') {
+        // ITFlow migration v2.4.4.32 - Internal Workspace setup mode UI polish
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.32'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.32') {
+        // ITFlow migration v2.4.4.33 - sidebar brand display and Internal Workspace interaction polish
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_display` VARCHAR(20) NOT NULL DEFAULT 'name'");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.33'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.33') {
+        // ITFlow migration v2.4.4.34 - sidebar brand live preview/background and Internal top-nav click fix
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_background_mode` VARCHAR(20) NOT NULL DEFAULT 'none'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_background_color` VARCHAR(30) NOT NULL DEFAULT '#343a40'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_background_opacity` INT(11) NOT NULL DEFAULT 100");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.34'");
+    }
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.34') {
+        // ITFlow migration v2.4.4.35 - sidebar brand preview save fix and Internal page footer/dropdown fix
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_display` VARCHAR(20) NOT NULL DEFAULT 'name'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_background_mode` VARCHAR(20) NOT NULL DEFAULT 'none'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_background_color` VARCHAR(30) NOT NULL DEFAULT '#343a40'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_background_opacity` INT(11) NOT NULL DEFAULT 100");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.35'");
+    }
+
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.35') {
+        // ITFlow migration v2.4.4.36 - Internal Workspace overview route and sidebar brand layout/size controls
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_layout` VARCHAR(20) NOT NULL DEFAULT 'logo_left'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_logo_size` VARCHAR(20) NOT NULL DEFAULT 'medium'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_name_size` VARCHAR(20) NOT NULL DEFAULT 'medium'");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.36'");
+    }
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.36') {
+        // ITFlow migration v2.4.4.37 - Internal pre-output route fix and generalized sidebar brand text/layout polish
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_text_source` VARCHAR(20) NOT NULL DEFAULT 'company'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_custom_text` VARCHAR(200) NOT NULL DEFAULT ''");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_text_size` VARCHAR(20) NOT NULL DEFAULT 'medium'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_display` VARCHAR(20) NOT NULL DEFAULT 'text'");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_sidebar_brand_display` = 'text' WHERE `config_sidebar_brand_display` = 'name'");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_sidebar_brand_display` = 'logo_text' WHERE `config_sidebar_brand_display` = 'logo_name'");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_sidebar_brand_text_size` = COALESCE(NULLIF(`config_sidebar_brand_name_size`, ''), 'medium') WHERE `config_sidebar_brand_text_size` = 'medium'");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.37'");
+    }
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.37') {
+        // ITFlow migration v2.4.4.38 - Internal route and sidebar brand polish
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_display` VARCHAR(20) NOT NULL DEFAULT 'text'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_background_mode` VARCHAR(20) NOT NULL DEFAULT 'none'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_background_color` VARCHAR(30) NOT NULL DEFAULT '#343a40'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_background_opacity` INT(11) NOT NULL DEFAULT 100");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_layout` VARCHAR(20) NOT NULL DEFAULT 'logo_left'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_logo_size` VARCHAR(20) NOT NULL DEFAULT 'medium'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_name_size` VARCHAR(20) NOT NULL DEFAULT 'medium'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_text_source` VARCHAR(20) NOT NULL DEFAULT 'company'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_custom_text` VARCHAR(200) NOT NULL DEFAULT ''");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_text_size` VARCHAR(20) NOT NULL DEFAULT 'medium'");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_sidebar_brand_display` = 'text' WHERE `config_sidebar_brand_display` = 'name'");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_sidebar_brand_display` = 'logo_text' WHERE `config_sidebar_brand_display` = 'logo_name'");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_sidebar_brand_logo_size` = 'medium' WHERE `config_sidebar_brand_logo_size` NOT IN ('tiny','small','medium','large','xlarge','huge')");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_sidebar_brand_text_size` = COALESCE(NULLIF(`config_sidebar_brand_text_size`, ''), NULLIF(`config_sidebar_brand_name_size`, ''), 'medium')");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_sidebar_brand_text_size` = 'medium' WHERE `config_sidebar_brand_text_size` NOT IN ('tiny','small','medium','large','xlarge','huge')");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.38'");
+    }
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.38') {
+        // ITFlow migration v2.4.4.39 - sidebar brand preview/background/layout polish
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_display` VARCHAR(20) NOT NULL DEFAULT 'text'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_background_mode` VARCHAR(20) NOT NULL DEFAULT 'none'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_background_color` VARCHAR(30) NOT NULL DEFAULT '#343a40'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_background_opacity` INT(11) NOT NULL DEFAULT 100");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_layout` VARCHAR(20) NOT NULL DEFAULT 'logo_left'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_logo_size` VARCHAR(20) NOT NULL DEFAULT 'medium'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_text_source` VARCHAR(20) NOT NULL DEFAULT 'company'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_custom_text` VARCHAR(200) NOT NULL DEFAULT ''");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_text_size` VARCHAR(20) NOT NULL DEFAULT 'medium'");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_sidebar_brand_display` = 'text' WHERE `config_sidebar_brand_display` = 'name'");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_sidebar_brand_display` = 'logo_text' WHERE `config_sidebar_brand_display` = 'logo_name'");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_sidebar_brand_logo_size` = 'medium' WHERE `config_sidebar_brand_logo_size` NOT IN ('tiny','small','medium','large','xlarge','huge')");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_sidebar_brand_text_size` = COALESCE(NULLIF(`config_sidebar_brand_text_size`, ''), NULLIF(`config_sidebar_brand_name_size`, ''), 'medium')");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_sidebar_brand_text_size` = 'medium' WHERE `config_sidebar_brand_text_size` NOT IN ('tiny','small','medium','large','xlarge','huge')");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_sidebar_brand_background_mode` = 'none' WHERE `config_sidebar_brand_background_mode` NOT IN ('none','preset','custom')");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_sidebar_brand_background_color` = '#343a40' WHERE `config_sidebar_brand_background_color` NOT REGEXP '^#[0-9A-Fa-f]{6}$'");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_sidebar_brand_background_opacity` = 100 WHERE `config_sidebar_brand_background_opacity` < 0 OR `config_sidebar_brand_background_opacity` > 100");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.39'");
+    }
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.39') {
+        // ITFlow migration v2.4.4.40 - sidebar brand text color and structural spacing fix
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_text_color_mode` VARCHAR(20) NOT NULL DEFAULT 'default'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_text_color` VARCHAR(30) NOT NULL DEFAULT '#ffffff'");
+        mysqli_query($mysqli, "ALTER TABLE `settings` ADD COLUMN IF NOT EXISTS `config_sidebar_brand_text_color_opacity` INT(11) NOT NULL DEFAULT 100");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_sidebar_brand_text_color_mode` = 'default' WHERE `config_sidebar_brand_text_color_mode` NOT IN ('default','preset','custom')");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_sidebar_brand_text_color` = '#ffffff' WHERE `config_sidebar_brand_text_color` NOT REGEXP '^#[0-9A-Fa-f]{6}$'");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_sidebar_brand_text_color_opacity` = 100 WHERE `config_sidebar_brand_text_color_opacity` < 0 OR `config_sidebar_brand_text_color_opacity` > 100");
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.40'");
+    }
+
+
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.40' || CURRENT_DATABASE_VERSION == '2.4.4.41') {
+        // ITFlow migration v2.4.4.42 - reactive sidebar brand height offset / nav overlap fix
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.42'");
+    }
+
+
+    // PHASE8B2_UPDATE_SOURCES_MIGRATION - configurable update sources for Admin -> Update
+    if (LATEST_DATABASE_VERSION > CURRENT_DATABASE_VERSION) {
+        mysqli_query($mysqli, "CREATE TABLE IF NOT EXISTS `itflow_update_sources` (
+            `source_id` INT(11) NOT NULL AUTO_INCREMENT,
+            `source_name` VARCHAR(100) NOT NULL,
+            `source_remote` VARCHAR(64) NOT NULL DEFAULT 'origin',
+            `source_url` VARCHAR(500) NOT NULL,
+            `source_branch` VARCHAR(100) NOT NULL DEFAULT 'master',
+            `source_type` VARCHAR(32) NOT NULL DEFAULT 'git',
+            `source_active` TINYINT(1) NOT NULL DEFAULT 0,
+            `source_archived_at` DATETIME DEFAULT NULL,
+            `source_created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `source_updated_at` DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`source_id`),
+            KEY `source_active` (`source_active`),
+            KEY `source_archived_at` (`source_archived_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        $update_source_count_sql = mysqli_query($mysqli, "SELECT COUNT(*) AS update_source_count FROM `itflow_update_sources`");
+        $update_source_count_row = mysqli_fetch_assoc($update_source_count_sql);
+        if (intval($update_source_count_row['update_source_count'] ?? 0) === 0) {
+            mysqli_query($mysqli, "INSERT INTO `itflow_update_sources` SET
+                `source_name` = 'Official ITFlow',
+                `source_remote` = 'origin',
+                `source_url` = 'https://github.com/itflow-org/itflow.git',
+                `source_branch` = 'master',
+                `source_type` = 'git',
+                `source_active` = 1
+            ");
+        }
+
+        $active_update_source_sql = mysqli_query($mysqli, "SELECT COUNT(*) AS active_update_source_count FROM `itflow_update_sources` WHERE `source_active` = 1 AND `source_archived_at` IS NULL");
+        $active_update_source_row = mysqli_fetch_assoc($active_update_source_sql);
+        if (intval($active_update_source_row['active_update_source_count'] ?? 0) === 0) {
+            mysqli_query($mysqli, "UPDATE `itflow_update_sources` SET `source_active` = 1 WHERE `source_archived_at` IS NULL ORDER BY `source_id` ASC LIMIT 1");
+        }
+    }
+

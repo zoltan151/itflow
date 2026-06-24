@@ -18,6 +18,13 @@ if (isset($_GET['leads']) && $_GET['leads'] == 1) {
     $leads_query = "AND client_lead = 0";
 }
 
+
+// Internal Workspace Filter
+$internal_client_filter = '';
+if (!empty($config_internal_workspace_enable) && !empty($config_internal_hide_from_clients) && !empty($config_internal_client_id)) {
+    $internal_client_filter = 'AND clients.client_id != ' . intval($config_internal_client_id);
+}
+
 // Tags Filter
 if (isset($_GET['tags']) && is_array($_GET['tags']) && !empty($_GET['tags'])) {
     // Sanitize each element of the tags array
@@ -67,6 +74,7 @@ $sql = mysqli_query(
       AND client_$archive_query
       AND DATE(client_created_at) BETWEEN '$dtf' AND '$dtt'
       $leads_query
+      $internal_client_filter
       $access_permission_query
       $tag_query
       $industry_query

@@ -327,6 +327,11 @@ $num_rows = mysqli_fetch_row(mysqli_query($mysqli, "SELECT FOUND_ROWS()"));
                                             data-modal-url="modals/domain/domain_edit.php?<?= $client_url ?>&id=<?= $domain_id ?>">
                                             <i class="fas fa-fw fa-edit mr-2"></i>Edit
                                         </a>
+                                        <?php if (!$domain_archived_at) { ?>
+                                        <a class="dropdown-item text-info" href="post.php?refresh_domain=<?php echo $domain_id; ?>&csrf_token=<?= $_SESSION['csrf_token'] ?>">
+                                            <i class="fas fa-fw fa-sync-alt mr-2"></i>Queue Metadata Refresh
+                                        </a>
+                                        <?php } ?>
                                         <?php if ($session_user_role == 3) { ?>
                                             <?php if ($domain_archived_at) { ?>
                                             <div class="dropdown-divider"></div>

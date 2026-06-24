@@ -11,6 +11,201 @@ require_once "../functions.php";
 require_once "../includes/check_login.php";
 require_once "../plugins/totp/totp.php";
 
+
+function ajaxResolvedFeedbackColor(string $color, string $fallback): string {
+    $color = trim($color);
+    if (preg_match('/^#[0-9A-Fa-f]{6}$/', $color)) {
+        return $color;
+    }
+    return $fallback;
+}
+
+function ajaxResolvedFeedbackOrder($value, int $fallback): int {
+    $order = intval($value);
+    if ($order < 0) {
+        return $fallback;
+    }
+    return $order;
+}
+
+function ajaxResolvedFeedbackSection(string $body, string $button_url = '', string $button_text = '', string $button_color = '#6c757d', string $section_title = ''): string {
+    $body = trim($body);
+    $button_url = trim($button_url);
+    $section_title = trim($section_title);
+
+    if ($body === '' && ($button_url === '' || !filter_var($button_url, FILTER_VALIDATE_URL))) {
+        return '';
+    }
+
+    // Intro-only sections stay lightweight. Action sections get a subtle card so each path is easier to scan in email clients.
+    if ($section_title === '' && ($button_url === '' || !filter_var($button_url, FILTER_VALIDATE_URL))) {
+        return "<p style='margin:0 0 14px 0;line-height:1.45;'>" . nl2br(htmlspecialchars($body, ENT_QUOTES, 'UTF-8')) . "</p>";
+    }
+
+    $button_color = ajaxResolvedFeedbackColor($button_color, '#6c757d');
+    $title_html = htmlspecialchars($section_title, ENT_QUOTES, 'UTF-8');
+    $html = "<div style='border:1px solid #e5e7eb;border-left:4px solid $button_color;border-radius:6px;padding:12px 14px;margin:0 0 16px 0;background:#fafafa;'>";
+
+    if ($section_title !== '') {
+        $html .= "<p style='margin:0 0 8px 0;font-weight:700;color:#111827;'>$title_html</p>";
+    }
+
+    if ($body !== '') {
+        $html .= "<p style='margin:0 0 12px 0;line-height:1.45;'>" . nl2br(htmlspecialchars($body, ENT_QUOTES, 'UTF-8')) . "</p>";
+    }
+
+    if ($button_url !== '' && filter_var($button_url, FILTER_VALIDATE_URL)) {
+        $button_text = trim($button_text);
+        if ($button_text === '') {
+            $button_text = 'Open Link';
+        }
+        $button_url_html = htmlspecialchars($button_url, ENT_QUOTES, 'UTF-8');
+        $button_text_html = htmlspecialchars($button_text, ENT_QUOTES, 'UTF-8');
+        $html .= "<a href='$button_url_html' style='display:inline-block;background:$button_color;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:4px;margin:2px 8px 0 0;font-weight:700;'>$button_text_html</a>";
+    }
+
+    $html .= "</div>";
+
+    return $html;
+}
+
+function ajaxBuildResolvedFeedbackBlock(): string {
+    global $config_ticket_resolved_feedback_enable,
+           $config_ticket_resolved_feedback_message_enable,
+           $config_ticket_resolved_feedback_message,
+           $config_ticket_resolved_feedback_message_order,
+           $config_ticket_resolved_feedback_review_enable,
+           $config_ticket_resolved_feedback_review_heading_enable,
+           $config_ticket_resolved_feedback_review_heading,
+           $config_ticket_resolved_feedback_review_message_enable,
+           $config_ticket_resolved_feedback_review_message,
+           $config_ticket_resolved_feedback_review_button_enable,
+           $config_ticket_resolved_feedback_review_url,
+           $config_ticket_resolved_feedback_review_text,
+           $config_ticket_resolved_feedback_review_order,
+           $config_ticket_resolved_feedback_review_button_color,
+           $config_ticket_resolved_feedback_private_enable,
+           $config_ticket_resolved_feedback_private_heading_enable,
+           $config_ticket_resolved_feedback_private_heading,
+           $config_ticket_resolved_feedback_private_message_enable,
+           $config_ticket_resolved_feedback_private_message,
+           $config_ticket_resolved_feedback_private_button_enable,
+           $config_ticket_resolved_feedback_private_url,
+           $config_ticket_resolved_feedback_private_text,
+           $config_ticket_resolved_feedback_private_order,
+           $config_ticket_resolved_feedback_private_button_color;
+
+    if (intval($config_ticket_resolved_feedback_enable ?? 0) !== 1) {
+        return '';
+    }
+
+    $sections = [];
+
+    if (intval($config_ticket_resolved_feedback_message_enable ?? 1) === 1) {
+        $message = trim((string)($config_ticket_resolved_feedback_message ?? ''));
+        if ($message === '') {
+            $message = 'Thank you for trusting us with your IT support.';
+        }
+        $sections[] = [
+            'order' => ajaxResolvedFeedbackOrder($config_ticket_resolved_feedback_message_order ?? 10, 10),
+            'key' => 'intro',
+            'html' => ajaxResolvedFeedbackSection($message),
+        ];
+    }
+
+    if (intval($config_ticket_resolved_feedback_private_enable ?? 1) === 1) {
+        $private_message = '';
+        if (intval($config_ticket_resolved_feedback_private_message_enable ?? 1) === 1) {
+            $private_message = trim((string)($config_ticket_resolved_feedback_private_message ?? ''));
+            if ($private_message === '') {
+                $private_message = "If something wasn't right, please send us private feedback so our management team can review it and make it right.";
+            }
+        }
+
+        $private_url = '';
+        $private_text = '';
+        if (intval($config_ticket_resolved_feedback_private_button_enable ?? 1) === 1) {
+            $private_url = trim((string)($config_ticket_resolved_feedback_private_url ?? ''));
+            $private_text = trim((string)($config_ticket_resolved_feedback_private_text ?? ''));
+            if ($private_text === '') {
+                $private_text = 'Send Private Feedback';
+            }
+        }
+
+        $sections[] = [
+            'order' => ajaxResolvedFeedbackOrder($config_ticket_resolved_feedback_private_order ?? 20, 20),
+            'key' => 'private',
+            'html' => ajaxResolvedFeedbackSection(
+                $private_message,
+                $private_url,
+                $private_text,
+                ajaxResolvedFeedbackColor((string)($config_ticket_resolved_feedback_private_button_color ?? ''), '#d97706'),
+                (intval($config_ticket_resolved_feedback_private_heading_enable ?? 1) === 1) ? trim((string)($config_ticket_resolved_feedback_private_heading ?? 'Something we can improve?')) : ''
+            ),
+        ];
+    }
+
+    if (intval($config_ticket_resolved_feedback_review_enable ?? 1) === 1) {
+        $review_message = '';
+        if (intval($config_ticket_resolved_feedback_review_message_enable ?? 1) === 1) {
+            $review_message = trim((string)($config_ticket_resolved_feedback_review_message ?? ''));
+            if ($review_message === '') {
+                $review_message = "If you're happy with the service you received, we'd greatly appreciate a quick public review. It only takes about 30 seconds, and it makes a huge difference in helping other businesses find a reliable IT support partner.";
+            }
+        }
+
+        $review_url = '';
+        $review_text = '';
+        if (intval($config_ticket_resolved_feedback_review_button_enable ?? 1) === 1) {
+            $review_url = trim((string)($config_ticket_resolved_feedback_review_url ?? ''));
+            $review_text = trim((string)($config_ticket_resolved_feedback_review_text ?? ''));
+            if ($review_text === '') {
+                $review_text = 'Leave a Review';
+            }
+        }
+
+        $sections[] = [
+            'order' => ajaxResolvedFeedbackOrder($config_ticket_resolved_feedback_review_order ?? 30, 30),
+            'key' => 'review',
+            'html' => ajaxResolvedFeedbackSection(
+                $review_message,
+                $review_url,
+                $review_text,
+                ajaxResolvedFeedbackColor((string)($config_ticket_resolved_feedback_review_button_color ?? ''), '#16a34a'),
+                (intval($config_ticket_resolved_feedback_review_heading_enable ?? 1) === 1) ? trim((string)($config_ticket_resolved_feedback_review_heading ?? 'Happy with our service?')) : ''
+            ),
+        ];
+    }
+
+    $sections = array_values(array_filter($sections, function ($section) {
+        return trim($section['html'] ?? '') !== '';
+    }));
+
+    if (empty($sections)) {
+        return '';
+    }
+
+    usort($sections, function ($a, $b) {
+        $order_compare = intval($a['order']) <=> intval($b['order']);
+        if ($order_compare !== 0) {
+            return $order_compare;
+        }
+        return strcmp((string)$a['key'], (string)$b['key']);
+    });
+
+    $html = "<br><br><div style='border-top:1px solid #dddddd;padding-top:18px;margin-top:22px;'>"
+        . "<p style='margin:0 0 14px 0;font-size:16px;'><strong>Feedback</strong></p>";
+
+    foreach ($sections as $section) {
+        $html .= $section['html'];
+    }
+
+    $html .= "</div>";
+
+    return $html;
+}
+
+
 /*
  * Fetches SSL certificates from remote hosts & returns the relevant info (issuer, expiry, public key)
  */
@@ -522,7 +717,7 @@ if (isset($_POST['update_kanban_ticket'])) {
 
                     // EMAIL
                     $subject = "Ticket resolved - [$ticket_prefix$ticket_number] - $ticket_subject | (pending closure)";
-                    $body = "<i style=\'color: #808080\'>##- Please type your reply above this line -##</i><br><br>Hello $contact_name,<br><br>Your ticket regarding $ticket_subject has been marked as solved and is pending closure.<br><br>If your request/issue is resolved, you can simply ignore this email. If you need further assistance, please reply or <a href=\'https://$config_base_url/guest/guest_view_ticket.php?ticket_id=$ticket_id&url_key=$url_key\'>re-open</a> to let us know! <br><br>Ticket: $ticket_prefix$ticket_number<br>Subject: $ticket_subject<br>Status: $ticket_status<br>Portal: <a href=\'https://$config_base_url/guest/guest_view_ticket.php?ticket_id=$ticket_id&url_key=$url_key\'>View ticket</a><br><br>--<br>$company_name - Support<br>$config_ticket_from_email<br>$company_phone";
+                    $body = "<i style=\'color: #808080\'>##- Please type your reply above this line -##</i><br><br>Hello $contact_name,<br><br>Your ticket regarding $ticket_subject has been marked as solved and is pending closure." . ajaxBuildResolvedFeedbackBlock() . "<br><br>If your request/issue is resolved, you can simply ignore this email. If you need further assistance, please reply or <a href=\'https://$config_base_url/guest/guest_view_ticket.php?ticket_id=$ticket_id&url_key=$url_key\'>re-open</a> to let us know! <br><br>Ticket: $ticket_prefix$ticket_number<br>Subject: $ticket_subject<br>Status: $ticket_status<br>Portal: <a href=\'https://$config_base_url/guest/guest_view_ticket.php?ticket_id=$ticket_id&url_key=$url_key\'>View ticket</a><br><br>--<br>$company_name - Support<br>$config_ticket_from_email<br>$company_phone";
 
                     // Check email valid
                     if (filter_var($contact_email, FILTER_VALIDATE_EMAIL)) {

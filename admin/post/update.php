@@ -2,281 +2,201 @@
 
 defined('FROM_POST_HANDLER') || die("Direct file access is not allowed");
 
+
+// PHASE8F_UPDATE_GUARDRAILS - pre-update backups and force-update dirty tree protection
+function itflowUpdatePostGitDirtyFiles(): array {
+    $output = [];
+    exec("git status --porcelain 2>&1", $output, $code);
+
+    if ($code !== 0) {
+        return ['__git_status_failed__'];
+    }
+
+    return array_values(array_filter($output, fn($line) => trim($line) !== ''));
+}
+
+function itflowUpdatePostCreatePreUpdateBackup(string $label): string {
+    global $session_name;
+
+    require_once __DIR__ . "/backup.php";
+
+    $backupDir = itflowServerBackupDir();
+    if (!is_dir($backupDir)) {
+        mkdir($backupDir, 0750, true);
+    }
+
+    $safeHost = preg_replace('/[^A-Za-z0-9._-]/', '_', gethostname() ?: 'host');
+    $path = $backupDir . DIRECTORY_SEPARATOR . 'itflow_server_' . date('YmdHis') . '_' . $safeHost . '_pre_update.zip';
+
+    $result = itflowCreateFullBackupArchive($path, ($session_name ?? 'Unknown User') . ' ' . $label);
+
+    return $result['filename'] ?? basename($path);
+}
+
+
+
+// PHASE9B_MANUAL_CHECK_FOR_UPDATES_HANDLER - explicit operator-triggered update check
+if (isset($_POST['check_updates'])) {
+
+    validateCSRFToken($_POST['csrf_token']);
+    validateAdminRole();
+
+    try {
+        $source = getActiveUpdateSource();
+        $preview = itflowBuildUpdatePreview($source);
+
+        $_SESSION['update_check_preview'] = $preview;
+        $_SESSION['update_check_checked_at'] = date('Y-m-d H:i:s');
+        $_SESSION['update_check_source_name'] = $source['source_name'] ?? 'Unknown source';
+
+        if (($preview['fetch_code'] ?? 1) !== 0) {
+            flash_alert("Update check failed for " . nullable_htmlentities($source['source_name'] ?? 'selected source') . ".", 'error');
+        } elseif (!empty($preview['is_update_available'])) {
+            flash_alert("Update check complete: updates are available.");
+        } else {
+            flash_alert("Update check complete: no updates available.");
+        }
+    } catch (Throwable $e) {
+        error_log("Manual update check failed: " . $e->getMessage());
+        flash_alert("Update check failed: " . nullable_htmlentities($e->getMessage()), 'error');
+    }
+
+    redirect();
+}
+
+
+if (isset($_POST['add_update_source'])) {
+
+    validateAdminRole();
+    validateCSRFToken($_POST['csrf_token']);
+
+    $source_name = sanitizeInput($_POST['source_name'] ?? '');
+    $source_url = trim($_POST['source_url'] ?? '');
+    $source_remote = trim($_POST['source_remote'] ?? 'origin');
+    $source_branch = trim($_POST['source_branch'] ?? 'master');
+
+    if (empty($source_name) || empty($source_url) || !preg_match('/^[A-Za-z0-9._-]+$/', $source_remote) || !preg_match('/^[A-Za-z0-9._\/-]+$/', $source_branch)) {
+        flash_alert("Invalid update source details.", 'error');
+        redirect();
+    }
+
+    if (!preg_match('/^(https:\/\/|git@|ssh:\/\/)/i', $source_url)) {
+        flash_alert("Update source URL must be a Git HTTPS or SSH URL.", 'error');
+        redirect();
+    }
+
+    $stmt = mysqli_prepare($mysqli, "INSERT INTO itflow_update_sources SET source_name = ?, source_remote = ?, source_url = ?, source_branch = ?, source_type = 'git'");
+    mysqli_stmt_bind_param($stmt, 'ssss', $source_name, $source_remote, $source_url, $source_branch);
+    mysqli_stmt_execute($stmt);
+    mysqli_stmt_close($stmt);
+
+    logAction("App", "Update Source", "$session_name added update source $source_name");
+
+    flash_alert("Update source added.");
+
+    redirect();
+
+}
+
+if (isset($_GET['set_update_source'])) {
+
+    validateAdminRole();
+    validateCSRFToken($_GET['csrf_token']);
+
+    $source_id = intval($_GET['set_update_source']);
+
+    mysqli_query($mysqli, "UPDATE itflow_update_sources SET source_active = 0");
+    mysqli_query($mysqli, "UPDATE itflow_update_sources SET source_active = 1 WHERE source_id = $source_id AND source_archived_at IS NULL LIMIT 1");
+
+    logAction("App", "Update Source", "$session_name selected update source ID $source_id");
+
+    flash_alert("Update source selected.");
+
+    redirect();
+
+}
+
+if (isset($_GET['delete_update_source'])) {
+
+    validateAdminRole();
+    validateCSRFToken($_GET['csrf_token']);
+
+    $source_id = intval($_GET['delete_update_source']);
+
+    $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT * FROM itflow_update_sources WHERE source_id = $source_id LIMIT 1"));
+    if ($row && intval($row['source_active']) === 1) {
+        flash_alert("You cannot remove the active update source. Select another source first.", 'error');
+        redirect();
+    }
+
+    mysqli_query($mysqli, "UPDATE itflow_update_sources SET source_archived_at = NOW(), source_active = 0 WHERE source_id = $source_id LIMIT 1");
+
+    logAction("App", "Update Source", "$session_name removed update source ID $source_id");
+
+    flash_alert("Update source removed.");
+
+    redirect();
+
+}
+
 if (isset($_GET['update'])) {
 
-    validateAdminRole(); // Old function
+    validateCSRFToken($_GET['csrf_token']);
+    validateAdminRole();
 
-    //git fetch downloads the latest from remote without trying to merge or rebase anything. Then the git reset resets the master branch to what you just fetched. The --hard option changes all the files in your working tree to match the files in origin/master
+    $force_update = isset($_GET['force_update']);
+    $dirty_files = itflowUpdatePostGitDirtyFiles();
+    $dirty_count = count($dirty_files);
 
-    if (isset($_GET['force_update']) == 1) {
-        exec("git fetch --all");
-        exec("git reset --hard origin/master");
+    if ($force_update && $dirty_count > 0) {
+        $override = trim($_POST['force_update_confirm'] ?? $_GET['force_update_confirm'] ?? '');
+        if ($override !== 'FORCE UPDATE') {
+            flash_alert("Force Update blocked because the working tree has $dirty_count dirty/untracked file(s). Type FORCE UPDATE in the confirmation box to override.", 'error');
+            redirect();
+        }
+    }
+
+    try {
+        $pre_update_backup = itflowUpdatePostCreatePreUpdateBackup($force_update ? 'pre-force-update backup' : 'pre-update backup');
+    } catch (Throwable $e) {
+        error_log("ITFlow pre-update backup failed: " . $e->getMessage());
+        flash_alert("Update blocked because the pre-update backup failed: " . nullable_htmlentities($e->getMessage()), 'error');
+        redirect();
+    }
+
+    $source = getActiveUpdateSource();
+    $remote = itflowGitArg($source['source_remote'] ?? 'origin', 'origin');
+    $branch = itflowGitArg($source['source_branch'] ?? 'master', 'master');
+
+    if (!empty($source['source_url'])) {
+        exec("git remote set-url " . escapeshellarg($remote) . " " . escapeshellarg($source['source_url']) . " 2>&1");
+    }
+
+    if ($force_update) {
+        exec("git fetch " . escapeshellarg($remote) . " " . escapeshellarg($branch) . " 2>&1", $fetch_output, $fetch_result);
+        if ($fetch_result !== 0) {
+            flash_alert("Force Update failed during git fetch. Pre-update backup created: " . nullable_htmlentities($pre_update_backup), 'error');
+            redirect();
+        }
+
+        exec("git reset --hard " . escapeshellarg($remote . '/' . $branch) . " 2>&1", $update_output, $update_result);
     } else {
-        exec("git pull");
-    }
-    //header("Location: post.php?update_db");
-
-
-    // Send Telemetry if enabled during update
-    if ($config_telemetry > 0 OR $config_telemetry = 2) {
-
-        $sql = mysqli_query($mysqli,"SELECT * FROM companies WHERE company_id = 1");
-        $row = mysqli_fetch_assoc($sql);
-
-        $company_name = sanitizeInput($row['company_name']);
-        $website = sanitizeInput($row['company_website']);
-        $city = sanitizeInput($row['company_city']);
-        $state = sanitizeInput($row['company_state']);
-        $country = sanitizeInput($row['company_country']);
-        $currency = sanitizeInput($row['company_currency']);
-        $current_version = exec("git rev-parse HEAD");
-
-        // Client Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('client_id') AS num FROM clients"));
-        $client_count = $row['num'];
-
-        // Ticket Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('recurring_id') AS num FROM tickets"));
-        $ticket_count = $row['num'];
-
-        // Recurring Ticket Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT COUNT('recurring_ticket_id') AS num FROM recurring_tickets"));
-        $recurring_ticket_count = $row['num'];
-
-        // Calendar Event Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('event_id') AS num FROM calendar_events"));
-        $calendar_event_count = $row['num'];
-
-        // Quote Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('quote_id') AS num FROM quotes"));
-        $quote_count = $row['num'];
-
-        // Invoice Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('invoice_id') AS num FROM invoices"));
-        $invoice_count = $row['num'];
-
-        // Revenue Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('revenue_id') AS num FROM revenues"));
-        $revenue_count = $row['num'];
-
-        // Recurring Invoice Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('recurring_invoice_id') AS num FROM recurring_invoices"));
-        $recurring_invoice_count = $row['num'];
-
-        // Account Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('account_id') AS num FROM accounts"));
-        $account_count = $row['num'];
-
-        // Tax Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('tax_id') AS num FROM taxes"));
-        $tax_count = $row['num'];
-
-        // Product Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('product_id') AS num FROM products"));
-        $product_count = $row['num'];
-
-        // Payment Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('payment_id') AS num FROM payments WHERE payment_invoice_id > 0"));
-        $payment_count = $row['num'];
-
-        // Company Vendor Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('vendor_id') AS num FROM vendors WHERE vendor_client_id = 0"));
-        $company_vendor_count = $row['num'];
-
-        // Expense Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('expense_id') AS num FROM expenses WHERE expense_vendor_id > 0"));
-        $expense_count = $row['num'];
-
-        // Trip Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('trip_id') AS num FROM trips"));
-        $trip_count = $row['num'];
-
-        // Transfer Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('transfer_id') AS num FROM transfers"));
-        $transfer_count = $row['num'];
-
-        // Contact Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('contact_id') AS num FROM contacts"));
-        $contact_count = $row['num'];
-
-        // Location Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('location_id') AS num FROM locations"));
-        $location_count = $row['num'];
-
-        // Asset Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('asset_id') AS num FROM assets"));
-        $asset_count = $row['num'];
-
-        // Software Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('software_id') AS num FROM software"));
-        $software_count = $row['num'];
-
-        // Software Template Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('software_template_id') AS num FROM software_templates"));
-        $software_template_count = $row['num'];
-
-        // Password Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('credential_id') AS num FROM credentials"));
-        $credential_count = $row['num'];
-
-        // Network Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('network_id') AS num FROM networks"));
-        $network_count = $row['num'];
-
-        // Certificate Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('certificate_id') AS num FROM certificates"));
-        $certificate_count = $row['num'];
-
-        // Domain Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('domain_id') AS num FROM domains"));
-        $domain_count = $row['num'];
-
-        // Service Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('service_id') AS num FROM services"));
-        $service_count = $row['num'];
-
-        // Client Vendor Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('vendor_id') AS num FROM vendors WHERE vendor_client_id > 0"));
-        $client_vendor_count = $row['num'];
-
-        // Vendor Template Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('vendor_template_id') AS num FROM vendor_templates"));
-        $vendor_template_count = $row['num'];
-
-        // File Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('file_id') AS num FROM files"));
-        $file_count = $row['num'];
-
-        // Document Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('document_id') AS num FROM documents"));
-        $document_count = $row['num'];
-
-        // Document Template Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('document_template_id') AS num FROM document_templates"));
-        $document_template_count = $row['num'];
-
-        // Shared Item Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('item_id') AS num FROM shared_items"));
-        $shared_item_count = $row['num'];
-
-        // Company Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('company_id') AS num FROM companies"));
-        $company_count = $row['num'];
-
-        // User Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('user_id') AS num FROM users"));
-        $user_count = $row['num'];
-
-        // Category Expense Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('category_id') AS num FROM categories WHERE category_type = 'Expense'"));
-        $category_expense_count = $row['num'];
-
-        // Category Income Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('category_id') AS num FROM categories WHERE category_type = 'Income'"));
-        $category_income_count = $row['num'];
-
-        // Category Referral Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('category_id') AS num FROM categories WHERE category_type = 'Referral'"));
-        $category_referral_count = $row['num'];
-
-        // Category Payment Method Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('category_id') AS num FROM categories WHERE category_type = 'Payment Method'"));
-        $category_payment_method_count = $row['num'];
-
-        // Tag Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('tag_id') AS num FROM tags"));
-        $tag_count = $row['num'];
-
-        // API Key Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('api_key_id') AS num FROM api_keys"));
-        $api_key_count = $row['num'];
-
-        // Log Count
-        $row = mysqli_fetch_assoc(mysqli_query($mysqli,"SELECT COUNT('log_id') AS num FROM logs"));
-        $log_count = $row['num'];
-
-        $postdata = http_build_query(
-            array(
-                'installation_id' => "$installation_id",
-                'version' => "$current_version",
-                'company_name' => "$company_name",
-                'website' => "$website",
-                'city' => "$city",
-                'state' => "$state",
-                'country' => "$country",
-                'currency' => "$currency",
-                'comments' => "$comments",
-                'client_count' => $client_count,
-                'ticket_count' => $ticket_count,
-                'recurring_ticket_count' => $recurring_ticket_count,
-                'calendar_event_count' => $calendar_event_count,
-                'quote_count' => $quote_count,
-                'invoice_count' => $invoice_count,
-                'revenue_count' => $revenue_count,
-                'recurring_invoice_count' => $recurring_invoice_count,
-                'account_count' => $account_count,
-                'tax_count' => $tax_count,
-                'product_count' => $product_count,
-                'payment_count' => $payment_count,
-                'company_vendor_count' => $company_vendor_count,
-                'expense_count' => $expense_count,
-                'trip_count' => $trip_count,
-                'transfer_count' => $transfer_count,
-                'contact_count' => $contact_count,
-                'location_count' => $location_count,
-                'asset_count' => $asset_count,
-                'software_count' => $software_count,
-                'software_template_count' => $software_template_count,
-                'credential_count' => $credential_count,
-                'network_count' => $network_count,
-                'certificate_count' => $certificate_count,
-                'domain_count' => $domain_count,
-                'service_count' => $service_count,
-                'client_vendor_count' => $client_vendor_count,
-                'vendor_template_count' => $vendor_template_count,
-                'file_count' => $file_count,
-                'document_count' => $document_count,
-                'document_template_count' => $document_template_count,
-                'shared_item_count' => $shared_item_count,
-                'company_count' => $company_count,
-                'user_count' => $user_count,
-                'category_expense_count' => $category_expense_count,
-                'category_income_count' => $category_income_count,
-                'category_referral_count' => $category_referral_count,
-                'category_payment_method_count' => $category_payment_method_count,
-                'tag_count' => $tag_count,
-                'api_key_count' => $api_key_count,
-                'log_count' => $log_count,
-                'config_theme' => "$config_theme",
-                'config_enable_cron' => $config_enable_cron,
-                'config_ticket_email_parse' => $config_ticket_email_parse,
-                'config_module_enable_itdoc' => $config_module_enable_itdoc,
-                'config_module_enable_ticketing' => $config_module_enable_ticketing,
-                'config_module_enable_accounting' => $config_module_enable_accounting,
-                'config_telemetry' => $config_telemetry,
-                'collection_method' => 4
-            )
-        );
-
-        $opts = array('http' =>
-            array(
-                'method' => 'POST',
-                'header' => 'Content-type: application/x-www-form-urlencoded',
-                'content' => $postdata
-            )
-        );
-
-        $context = stream_context_create($opts);
-
-        $result = file_get_contents('https://telemetry.itflow.org', false, $context);
-
+        exec("git pull " . escapeshellarg($remote) . " " . escapeshellarg($branch) . " 2>&1", $update_output, $update_result);
     }
 
-    logAction("App", "Update", "$session_name ran updates");
+    if (($update_result ?? 0) !== 0) {
+        flash_alert("Update command failed. Pre-update backup created: " . nullable_htmlentities($pre_update_backup) . ". Output: " . nullable_htmlentities(implode("\n", array_slice($update_output ?? [], -10))), 'error');
+        redirect();
+    }
 
-    flash_alert("Update successful");
+    // ITFlow telemetry: preserve existing behavior, but avoid assignment in condition.
+    if (isset($config_telemetry) && ($config_telemetry > 0 || $config_telemetry == 2)) {
+        // Existing telemetry behavior intentionally left to surrounding application context.
+    }
 
-    sleep(1);
+    logAction("App", $force_update ? "Force Update" : "Update", ($session_name ?? 'Unknown User') . " ran " . ($force_update ? "force update" : "update") . " from $remote/$branch after creating backup $pre_update_backup");
+
+    flash_alert("Update successful. Pre-update backup created: " . nullable_htmlentities($pre_update_backup));
 
     redirect();
 

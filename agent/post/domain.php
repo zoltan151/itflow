@@ -18,47 +18,44 @@ if (isset($_POST['add_domain'])) {
 
     enforceClientAccess();
 
-    // Set/check/lookup expiry date
+    // Keep domain creation fast: do not run WHOIS/DNS/SSL lookups during the form submit.
+    // Metadata is populated later by cron/domain_refresher.php and cron/certificate_refresher.php.
     if (strtotime($expire)) {
         $expire = "'" . $expire . "'";
+    } else {
+        $expire = 'NULL';
     }
-    else {
-        $expire = getDomainExpirationDate($name);
-        if (strtotime($expire)) {
-            $expire = "'" . $expire . "'";
-        } else {
-            $expire = 'NULL';
+
+    $a = '';
+    $ns = '';
+    $mx = '';
+    $txt = '';
+    $whois = '';
+
+    $refresh_queued_sql = $queue_refresh ? 'NOW()' : 'NULL';
+
+    // Add domain record
+    mysqli_query($mysqli,"INSERT INTO domains SET domain_name = '$name', domain_description = '$description', domain_registrar = $registrar,  domain_webhost = $webhost, domain_dnshost = $dnshost, domain_mailhost = $mailhost, domain_auto_map = $auto_map, domain_refresh_queued_at = $refresh_queued_sql, domain_expire = $expire, domain_ip = '$a', domain_name_servers = '$ns', domain_mail_servers = '$mx', domain_txt = '$txt', domain_raw_whois = '$whois', domain_notes = '$notes', domain_client_id = $client_id");
+
+    // Get inserted ID. DNS/WHOIS/SSL metadata will be refreshed asynchronously by cron.
+    $domain_id = mysqli_insert_id($mysqli);
+
+    if ($queue_refresh && $domain_id > 0) {
+        // Best-effort immediate background kick. If exec is disabled or fails, hourly cron will still process the queue.
+        $domain_refresher = realpath(__DIR__ . '/../../cron/domain_refresher.php');
+        if ($domain_refresher) {
+            $cmd = '/usr/bin/php ' . escapeshellarg($domain_refresher) . ' --domain-id=' . $domain_id . ' > /dev/null 2>&1 &';
+            @exec($cmd);
         }
     }
 
-    // NS, MX, A and WHOIS records/data
-    $records = getDomainRecords($name);
-    $a = sanitizeInput($records['a']);
-    $ns = sanitizeInput($records['ns']);
-    $mx = sanitizeInput($records['mx']);
-    $txt = sanitizeInput($records['txt']);
-    $whois = sanitizeInput($records['whois']);
+    logAction("Domain", "Create", "$session_name created domain $name", $client_id, $domain_id);
 
-    // Add domain record
-    mysqli_query($mysqli,"INSERT INTO domains SET domain_name = '$name', domain_description = '$description', domain_registrar = $registrar,  domain_webhost = $webhost, domain_dnshost = $dnshost, domain_mailhost = $mailhost, domain_expire = $expire, domain_ip = '$a', domain_name_servers = '$ns', domain_mail_servers = '$mx', domain_txt = '$txt', domain_raw_whois = '$whois', domain_notes = '$notes', domain_client_id = $client_id");
-
-    // Get inserted ID (for linking certificate, if exists)
-    $domain_id = mysqli_insert_id($mysqli);
-
-    // Get SSL cert for domain (if exists)
-    $certificate = getSSL($name);
-    if ($certificate['success'] == "TRUE") {
-        $expire = sanitizeInput($certificate['expire']);
-        $issued_by = sanitizeInput($certificate['issued_by']);
-        $public_key = sanitizeInput($certificate['public_key']);
-
-        mysqli_query($mysqli,"INSERT INTO certificates SET certificate_name = '$name', certificate_domain = '$name', certificate_issued_by = '$issued_by', certificate_expire = '$expire', certificate_public_key = '$public_key', certificate_domain_id = $domain_id, certificate_client_id = $client_id");
-        $extended_log_description = ', with associated SSL cert';
+    if ($queue_refresh) {
+        flash_alert("Domain <strong>$name</strong> created. Metadata refresh queued.");
+    } else {
+        flash_alert("Domain <strong>$name</strong> created.");
     }
-
-    logAction("Domain", "Create", "$session_name created domain $name$extended_log_description", $client_id, $domain_id);
-
-    flash_alert("Domain <strong>$name</strong> created");
 
     redirect();
 
@@ -78,28 +75,15 @@ if (isset($_POST['edit_domain'])) {
 
     enforceClientAccess();
 
-    // Set/check/lookup expiry date
-    if (strtotime($expire) && (new DateTime($expire)) > (new DateTime())) {
+    // Keep domain edits fast: do not run WHOIS/DNS/SSL lookups during the form submit.
+    // Cron will refresh metadata after the save. If no expiry is supplied, clear it until cron repopulates it.
+    if (strtotime($expire)) {
         $expire = "'" . $expire . "'";
-
     } else {
-        $expire = getDomainExpirationDate($name);
-        if (strtotime($expire)) {
-            $expire = "'" . $expire . "'";
-        } else {
-            $expire = 'NULL';
-        }
+        $expire = 'NULL';
     }
 
     $client_id = intval($_POST['client_id']);
-
-    // Update NS, MX, A and WHOIS records/data
-    $records = getDomainRecords($name);
-    $a = sanitizeInput($records['a']);
-    $ns = sanitizeInput($records['ns']);
-    $mx = sanitizeInput($records['mx']);
-    $txt = sanitizeInput($records['txt']);
-    $whois = sanitizeInput($records['whois']);
 
     // Current domain info
     $original_domain_info = mysqli_fetch_assoc(mysqli_query($mysqli,"
@@ -117,8 +101,8 @@ if (isset($_POST['edit_domain'])) {
         WHERE domain_id = $domain_id
     "));
 
-    // Update domain
-    mysqli_query($mysqli,"UPDATE domains SET domain_name = '$name', domain_description = '$description', domain_registrar = $registrar,  domain_webhost = $webhost, domain_dnshost = $dnshost, domain_mailhost = $mailhost, domain_expire = $expire, domain_ip = '$a', domain_name_servers = '$ns', domain_mail_servers = '$mx', domain_txt = '$txt', domain_raw_whois = '$whois', domain_notes = '$notes' WHERE domain_id = $domain_id");
+    // Update manually managed fields only. Existing DNS/WHOIS fields stay as-is until cron refreshes them.
+    mysqli_query($mysqli,"UPDATE domains SET domain_name = '$name', domain_description = '$description', domain_registrar = $registrar,  domain_webhost = $webhost, domain_dnshost = $dnshost, domain_mailhost = $mailhost, domain_auto_map = $auto_map, domain_expire = $expire, domain_notes = '$notes', domain_updated_at = NULL WHERE domain_id = $domain_id");
 
     // Fetch updated info
     $new_domain_info = mysqli_fetch_assoc(mysqli_query($mysqli,"
@@ -151,6 +135,46 @@ if (isset($_POST['edit_domain'])) {
     logAction("Domain", "Edit", "$session_name edited domain $name", $client_id, $domain_id);
 
     flash_alert("Domain <strong>$name</strong> edited");
+
+    redirect();
+
+}
+
+
+if (isset($_GET['refresh_domain'])) {
+
+    validateCSRFToken($_GET['csrf_token']);
+
+    enforceUserPermission('module_support', 2);
+
+    $domain_id = intval($_GET['refresh_domain']);
+
+    $sql = mysqli_query($mysqli, "SELECT domain_name, domain_client_id FROM domains WHERE domain_id = $domain_id");
+    $row = mysqli_fetch_assoc($sql);
+
+    if (!$row) {
+        flash_alert("Domain not found", 'error');
+        redirect();
+    }
+
+    $domain_name = sanitizeInput($row['domain_name']);
+    $client_id = intval($row['domain_client_id']);
+
+    enforceClientAccess();
+
+    // Queue the metadata refresh so the UI does not wait on WHOIS/RDAP/DNS/SSL lookups.
+    mysqli_query($mysqli, "UPDATE domains SET domain_refresh_queued_at = NOW() WHERE domain_id = $domain_id");
+
+    // Best-effort immediate background kick. If exec is disabled or fails, hourly cron will still process the queue.
+    $domain_refresher = realpath(__DIR__ . '/../../cron/domain_refresher.php');
+    if ($domain_refresher) {
+        $cmd = '/usr/bin/php ' . escapeshellarg($domain_refresher) . ' --domain-id=' . $domain_id . ' > /dev/null 2>&1 &';
+        @exec($cmd);
+    }
+
+    logAction("Domain", "Refresh", "$session_name queued domain metadata refresh for $domain_name", $client_id, $domain_id);
+
+    flash_alert("Domain <strong>$domain_name</strong> metadata refresh queued");
 
     redirect();
 

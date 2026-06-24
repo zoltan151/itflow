@@ -1,11 +1,22 @@
 <!-- Main Sidebar Container -->
 <aside class="main-sidebar sidebar-dark-<?php if (isset($_GET['client_id'])) { echo "gray"; } else { echo nullable_htmlentities($config_theme); } ?> d-print-none">
 
-    <a class="brand-link pb-1 mt-1" href="/agent/clients.php">
+    <?php
+    $is_internal_workspace_client_side_nav = !empty($config_internal_workspace_enable)
+        && !empty($config_internal_client_id)
+        && intval($client_id ?? 0) === intval($config_internal_client_id);
+
+    $client_side_nav_back_url = $is_internal_workspace_client_side_nav ? '/agent/dashboard.php' : '/agent/clients.php';
+    $client_side_nav_back_label = $is_internal_workspace_client_side_nav
+        ? nullable_htmlentities($config_internal_workspace_name ?: 'Internal')
+        : nullable_htmlentities($client_abbreviation);
+    ?>
+
+    <a class="brand-link pb-1 mt-1" href="<?php echo $client_side_nav_back_url; ?>">
         <p class="h5">
             <i class="nav-icon fas fa-arrow-left ml-3 mr-2"></i>
              <span class="brand-text">
-                 Back | <strong><?php echo $client_abbreviation; ?></strong>
+                 Back | <strong><?php echo $client_side_nav_back_label; ?></strong>
             </span>
         </p>
     </a>
@@ -123,6 +134,29 @@
                 </li>
 
                 <?php if ($config_module_enable_itdoc == 1) { ?>
+
+
+<?php
+$rmm_deployments_count = 0;
+$rmm_deployments_table_sql = mysqli_query($mysqli, "SHOW TABLES LIKE 'itflow_trmm_deployment_links'");
+if ($rmm_deployments_table_sql && mysqli_num_rows($rmm_deployments_table_sql) > 0 && isset($client_id)) {
+    $rmm_deployments_client_id = (int)$client_id;
+    $rmm_deployments_count_row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT COUNT(*) AS c FROM itflow_trmm_deployment_links WHERE active = 1 AND itflow_client_id = $rmm_deployments_client_id"));
+    $rmm_deployments_count = (int)($rmm_deployments_count_row['c'] ?? 0);
+}
+?>
+<li class="nav-item">
+  <a href="rmm_deployments.php?client_id=<?= (int)$client_id ?>" class="nav-link <?php if (basename($_SERVER['PHP_SELF']) == 'rmm_deployments.php') { echo 'active'; } ?>">
+    <i class="nav-icon fas fa-rocket"></i>
+    <p>
+      RMM Deployments
+      <?php if ($rmm_deployments_count > 0): ?>
+        <span class="right badge" style="background: transparent; color: inherit; font-size: 75%; font-weight: 700; padding: 0; line-height: inherit;"><?= (int)$rmm_deployments_count ?></span>
+      <?php endif; ?>
+    </p>
+  </a>
+</li>
+
 
                     <li class="nav-header mt-3">DOCUMENTATION</li>
 

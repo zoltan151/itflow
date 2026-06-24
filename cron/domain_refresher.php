@@ -15,7 +15,6 @@ require_once "../includes/inc_set_timezone.php";
 require_once "../functions.php";
 
 $sql_settings = mysqli_query($mysqli, "SELECT * FROM settings WHERE settings.company_id = 1");
-
 $row = mysqli_fetch_assoc($sql_settings);
 
 // Company Settings
@@ -24,30 +23,41 @@ $config_enable_cron = intval($row['config_enable_cron']);
 // Check cron is enabled
 if ($config_enable_cron == 0) {
     logApp("Cron-Domain-Refresher", "error", "Cron Domain Refresh unable to run - cron not enabled in admin settings.");
-    exit("Cron: is not enabled -- Quitting..");
+    exit("Cron: is not enabled -- Quitting..\n");
 }
 
-/*
- * ###############################################################################################################
- *  REFRESH DATA
- * ###############################################################################################################
- */
+function refreshDomainMetadata($domain_id, $refresh_certificate = false) {
+    global $mysqli;
 
-// REFRESH DOMAIN WHOIS DATA (1 a day/run)
-//  Get the oldest updated domain (MariaDB shows NULLs first when ordering by default)
-$row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT domain_id, domain_name, domain_expire FROM `domains` WHERE domain_archived_at IS NULL ORDER BY domain_updated_at LIMIT 1"));
+    $domain_id = intval($domain_id);
 
-if ($row) {
+    $row = mysqli_fetch_assoc(mysqli_query(
+        $mysqli,
+        "SELECT domain_id, domain_name, domain_expire, domain_registrar, domain_webhost, domain_dnshost, domain_mailhost, domain_auto_map, domain_client_id
+        FROM domains
+        LEFT JOIN clients ON client_id = domain_client_id
+        WHERE domain_id = $domain_id
+        AND domain_archived_at IS NULL
+        AND (client_id IS NULL OR client_archived_at IS NULL)
+        LIMIT 1"
+    ));
 
-    // Get current data in database
-    $domain_id = intval($row['domain_id']);
+    if (!$row) {
+        return false;
+    }
+
     $domain_name = sanitizeInput($row['domain_name']);
+    $client_id = intval($row['domain_client_id']);
     $current_expire = sanitizeInput($row['domain_expire']);
+    $domain_auto_map = intval($row['domain_auto_map'] ?? 1);
+    $registrar = intval($row['domain_registrar']);
+    $webhost = intval($row['domain_webhost']);
+    $dnshost = intval($row['domain_dnshost']);
+    $mailhost = intval($row['domain_mailhost']);
 
-    // Touch the record we're refreshing to ensure we don't loop
+    // Touch the record before remote lookups so a slow/failed lookup will not be retried repeatedly.
     mysqli_query($mysqli, "UPDATE domains SET domain_updated_at = NOW() WHERE domain_id = $domain_id");
 
-    // Lookup fresh info
     $expire = getDomainExpirationDate($domain_name);
     $records = getDomainRecords($domain_name);
     $a = sanitizeInput($records['a']);
@@ -56,18 +66,30 @@ if ($row) {
     $txt = sanitizeInput($records['txt']);
     $whois = sanitizeInput($records['whois']);
 
-    // Handle expiry date
+    if ($domain_auto_map == 1) {
+        $vendor_map = getDomainVendorAutoMap($client_id, $domain_name, $records);
+        if (!empty($vendor_map['registrar'])) {
+            $registrar = intval($vendor_map['registrar']);
+        }
+        if (!empty($vendor_map['webhost'])) {
+            $webhost = intval($vendor_map['webhost']);
+        }
+        if (!empty($vendor_map['dnshost'])) {
+            $dnshost = intval($vendor_map['dnshost']);
+        }
+        if (!empty($vendor_map['mailhost'])) {
+            $mailhost = intval($vendor_map['mailhost']);
+        }
+    }
+
     if (strtotime($expire)) {
-        $expire = "'" . $expire . "'"; // Valid
+        $expire = "'" . sanitizeInput($expire) . "'";
     } elseif (!strtotime($expire) && strtotime($current_expire)) {
-        // New expiry date is invalid, but old one is OK - reverting back
         $expire = "'" . $current_expire . "'";
     } else {
-        // Neither are valid, setting expiry to NULL
         $expire = 'NULL';
     }
 
-    // Current domain info
     $original_domain_info = mysqli_fetch_assoc(mysqli_query($mysqli,"
         SELECT
             domains.*,
@@ -83,11 +105,8 @@ if ($row) {
         WHERE domain_id = $domain_id
     "));
 
-    // Update the domain
-    mysqli_query($mysqli, "UPDATE domains SET domain_name = '$domain_name',  domain_expire = $expire, domain_ip = '$a', domain_name_servers = '$ns', domain_mail_servers = '$mx', domain_txt = '$txt', domain_raw_whois = '$whois' WHERE domain_id = $domain_id");
-    echo "Updated $domain_name.";
+    mysqli_query($mysqli, "UPDATE domains SET domain_registrar = $registrar, domain_webhost = $webhost, domain_dnshost = $dnshost, domain_mailhost = $mailhost, domain_expire = $expire, domain_ip = '$a', domain_name_servers = '$ns', domain_mail_servers = '$mx', domain_txt = '$txt', domain_raw_whois = '$whois', domain_updated_at = NOW(), domain_refresh_queued_at = NULL WHERE domain_id = $domain_id");
 
-    // Fetch updated info
     $new_domain_info = mysqli_fetch_assoc(mysqli_query($mysqli,"
         SELECT
             domains.*,
@@ -103,16 +122,113 @@ if ($row) {
         WHERE domain_id = $domain_id
     "));
 
-    // Compare/log changes
-    $ignored_columns = ["domain_updated_at", "domain_accessed_at", "domain_registrar", "domain_webhost", "domain_dnshost", "domain_mailhost"];
-    foreach ($original_domain_info as $column => $old_value) {
-        $new_value = $new_domain_info[$column];
-        if ($old_value != $new_value && !in_array($column, $ignored_columns)) {
-            $column = sanitizeInput($column);
-            $old_value = sanitizeInput($old_value);
-            $new_value = sanitizeInput($new_value);
-            mysqli_query($mysqli,"INSERT INTO domain_history SET domain_history_column = '$column', domain_history_old_value = '$old_value', domain_history_new_value = '$new_value', domain_history_domain_id = $domain_id");
+    if ($original_domain_info && $new_domain_info) {
+        $ignored_columns = ["domain_updated_at", "domain_accessed_at", "domain_refresh_queued_at", "domain_registrar", "domain_webhost", "domain_dnshost", "domain_mailhost"];
+        foreach ($original_domain_info as $column => $old_value) {
+            $new_value = $new_domain_info[$column] ?? null;
+            if ($old_value != $new_value && !in_array($column, $ignored_columns)) {
+                $column = sanitizeInput($column);
+                $old_value = sanitizeInput($old_value);
+                $new_value = sanitizeInput($new_value);
+                mysqli_query($mysqli,"INSERT INTO domain_history SET domain_history_column = '$column', domain_history_old_value = '$old_value', domain_history_new_value = '$new_value', domain_history_domain_id = $domain_id");
+            }
         }
     }
 
+    if ($refresh_certificate) {
+        $certificate = getSSL($domain_name);
+        if ($certificate['success'] == "TRUE") {
+            $cert_expire = sanitizeInput($certificate['expire']);
+            $issued_by = sanitizeInput($certificate['issued_by']);
+            $public_key = sanitizeInput($certificate['public_key']);
+
+            $sql_certificate = mysqli_query($mysqli, "SELECT certificate_id FROM certificates WHERE certificate_domain_id = $domain_id LIMIT 1");
+            if (mysqli_num_rows($sql_certificate) > 0) {
+                $certificate_row = mysqli_fetch_assoc($sql_certificate);
+                $certificate_id = intval($certificate_row['certificate_id']);
+                mysqli_query($mysqli,"UPDATE certificates SET certificate_name = '$domain_name', certificate_domain = '$domain_name', certificate_issued_by = '$issued_by', certificate_expire = '$cert_expire', certificate_public_key = '$public_key', certificate_client_id = $client_id WHERE certificate_id = $certificate_id");
+            } else {
+                mysqli_query($mysqli,"INSERT INTO certificates SET certificate_name = '$domain_name', certificate_domain = '$domain_name', certificate_issued_by = '$issued_by', certificate_expire = '$cert_expire', certificate_public_key = '$public_key', certificate_domain_id = $domain_id, certificate_client_id = $client_id");
+            }
+        }
+    }
+
+    return $domain_name;
+}
+
+$target_domain_id = 0;
+foreach ($argv as $arg) {
+    if (strpos($arg, '--domain-id=') === 0) {
+        $target_domain_id = intval(substr($arg, strlen('--domain-id=')));
+    }
+}
+
+if ($target_domain_id > 0) {
+    $domain_name = refreshDomainMetadata($target_domain_id, true);
+    if ($domain_name) {
+        echo "Refreshed queued domain $domain_name.\n";
+    } else {
+        echo "Queued domain not found or not active.\n";
+    }
+    exit;
+}
+
+/*
+ * ###############################################################################################################
+ *  REFRESH DATA
+ * ###############################################################################################################
+ */
+
+$sql_count = mysqli_query(
+    $mysqli,
+    "SELECT COUNT(domain_id) AS total_domains
+    FROM domains
+    LEFT JOIN clients ON client_id = domain_client_id
+    WHERE domain_archived_at IS NULL
+    AND (client_id IS NULL OR client_archived_at IS NULL)"
+);
+$row_count = mysqli_fetch_assoc($sql_count);
+$total_domains = intval($row_count['total_domains'] ?? 0);
+$domains_per_run = max(1, (int)ceil($total_domains / 24));
+
+if ($total_domains == 0) {
+    echo "No active domains to refresh.\n";
+    exit;
+}
+
+$sql_domains = mysqli_query(
+    $mysqli,
+    "SELECT domain_id
+    FROM domains
+    LEFT JOIN clients ON client_id = domain_client_id
+    WHERE domain_archived_at IS NULL
+    AND (client_id IS NULL OR client_archived_at IS NULL)
+    AND (
+        domain_refresh_queued_at IS NOT NULL
+        OR domain_updated_at IS NULL
+        OR DATE(domain_updated_at) < CURRENT_DATE
+    )
+    ORDER BY
+        CASE WHEN domain_refresh_queued_at IS NOT NULL THEN 0 ELSE 1 END,
+        domain_refresh_queued_at ASC,
+        domain_updated_at ASC,
+        domain_id ASC
+    LIMIT $domains_per_run"
+);
+
+$refreshed_count = 0;
+
+while ($row = mysqli_fetch_assoc($sql_domains)) {
+    $domain_id = intval($row['domain_id']);
+    $domain_name = refreshDomainMetadata($domain_id, false);
+    if ($domain_name) {
+        echo "Updated $domain_name.\n";
+        $refreshed_count++;
+    }
+}
+
+if ($refreshed_count == 0) {
+    echo "No domains needed refresh. Total active domains: $total_domains. Batch size: $domains_per_run.\n";
+} else {
+    echo "Refreshed $refreshed_count domain(s). Total active domains: $total_domains. Batch size: $domains_per_run.\n";
 }

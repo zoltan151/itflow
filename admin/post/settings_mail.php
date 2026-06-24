@@ -2,6 +2,85 @@
 
 defined('FROM_POST_HANDLER') || die("Direct file access is not allowed");
 
+
+if (isset($_POST['edit_mail_internal_domain_settings'])) {
+
+    validateCSRFToken($_POST['csrf_token']);
+
+    $raw_domains = (string)($_POST['config_mail_internal_domains'] ?? '');
+    $domains = [];
+
+    foreach (preg_split('/[\r\n,;]+/', $raw_domains) as $domain) {
+        $domain = strtolower(trim((string)$domain));
+        $domain = ltrim($domain, '@');
+        if ($domain !== '' && preg_match('/^[a-z0-9.-]+\.[a-z]{2,}$/i', $domain)) {
+            $domains[$domain] = true;
+        }
+    }
+
+    $allowed_modes = ['disabled', 'external_only', 'all'];
+    $config_mail_ignored_unknown_thread_mode = (string)($_POST['config_mail_ignored_unknown_thread_mode'] ?? 'external_only');
+    if (!in_array($config_mail_ignored_unknown_thread_mode, $allowed_modes, true)) {
+        $config_mail_ignored_unknown_thread_mode = 'external_only';
+    }
+
+    $config_mail_internal_domains = mysqli_real_escape_string($mysqli, implode("\n", array_keys($domains)));
+    $config_mail_internal_delegation_enable = intval($_POST['config_mail_internal_delegation_enable'] ?? 0);
+    $config_mail_ignored_unknown_thread_mode = mysqli_real_escape_string($mysqli, $config_mail_ignored_unknown_thread_mode);
+
+    mysqli_query($mysqli, "
+        UPDATE settings SET
+            config_mail_internal_domains = '$config_mail_internal_domains',
+            config_mail_internal_delegation_enable = $config_mail_internal_delegation_enable,
+            config_mail_ignored_unknown_thread_mode = '$config_mail_ignored_unknown_thread_mode'
+        WHERE company_id = 1
+    ");
+
+    logAction("Settings", "Edit", "$session_name edited internal mail domain/delegation settings");
+
+    flash_alert("Internal Mail Domain Settings updated");
+
+    redirect();
+
+}
+
+
+
+if (isset($_POST['edit_mail_infrastructure_settings'])) {
+
+    validateCSRFToken($_POST['csrf_token']);
+
+    $raw_addresses = (string)($_POST['config_mail_infrastructure_addresses'] ?? '');
+    $addresses = [];
+
+    foreach (preg_split('/[\r\n,;]+/', $raw_addresses) as $email) {
+        $email = strtolower(trim((string)$email));
+        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $addresses[$email] = true;
+        }
+    }
+
+    $config_mail_infrastructure_addresses = mysqli_real_escape_string($mysqli, implode("\n", array_keys($addresses)));
+    $config_mail_group_sender_resolver = intval($_POST['config_mail_group_sender_resolver'] ?? 0);
+    $config_mail_hide_infrastructure_addresses = intval($_POST['config_mail_hide_infrastructure_addresses'] ?? 0);
+
+    mysqli_query($mysqli, "
+        UPDATE settings SET
+            config_mail_infrastructure_addresses = '$config_mail_infrastructure_addresses',
+            config_mail_group_sender_resolver = $config_mail_group_sender_resolver,
+            config_mail_hide_infrastructure_addresses = $config_mail_hide_infrastructure_addresses
+        WHERE company_id = 1
+    ");
+
+    logAction("Settings", "Edit", "$session_name edited mail infrastructure settings");
+
+    flash_alert("Mail Infrastructure Settings updated");
+
+    redirect();
+
+}
+
+
 if (!defined('MICROSOFT_OAUTH_BASE_URL')) {
     define('MICROSOFT_OAUTH_BASE_URL', 'https://login.microsoftonline.com/');
 }
