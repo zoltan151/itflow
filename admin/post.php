@@ -1,5 +1,4 @@
 <?php
-
 /*
  * ITFlow - Admin GET/POST request handler
  */
@@ -37,3 +36,22 @@ require_once "../post/logout.php";
 
 // TODO: Find a home for these
 require_once "../post/misc.php";
+
+
+// ITFlow server backup/restore/release-prep handlers.
+// Loaded late so admin/post.php has already initialized the normal ITFlow context.
+if (
+    isset($_GET['create_server_backup']) ||
+    isset($_GET['download_server_backup']) ||
+    isset($_GET['delete_server_backup']) ||
+    isset($_GET['create_release_prep_export']) ||
+    isset($_GET['download_release_prep_export']) ||
+    isset($_GET['delete_release_prep_export']) ||
+    isset($_POST['restore_server_backup']) ||
+    isset($_POST['upload_restore_backup']) ||
+    isset($_POST['create_release_prep_export']) ||
+    isset($_POST['delete_release_prep_export'])
+) {
+    require_once 'post/backup.php';
+}
+

@@ -751,6 +751,21 @@ function zipFolderStrict(string $folderPath, string $zipFilePath): void {
 }
 
 
+
+if (!function_exists('itflowBackupSafeNotify')) {
+    function itflowBackupSafeNotify(string $title, string $message): void {
+        if (!function_exists('appNotify')) {
+            return;
+        }
+
+        try {
+            appNotify($title, $message);
+        } catch (Throwable $e) {
+            error_log("ITFlow backup notification skipped: " . $e->getMessage());
+        }
+    }
+}
+
 // PHASE8C_SERVER_BACKUP_HELPERS - server-side backups for Admin -> Update
 function itflowServerBackupDir(): string {
     return '/var/backups/itflow';
@@ -877,14 +892,14 @@ if (isset($_GET['create_server_backup'])) {
         $result = itflowCreateFullBackupArchive($path, $session_name ?? 'Unknown User');
 
         logAction("System", "Backup", ($session_name ?? 'Unknown User') . " created server-side backup " . $result['filename']);
-        appNotify("Backup Completed", "Server-side backup created: " . $result['filename']);
+        itflowBackupSafeNotify("Backup Completed", "Server-side backup created: " . $result['filename']);
 
         flash_alert("Server backup created: " . nullable_htmlentities($result['filename']));
     } catch (Throwable $e) {
         error_log("ITFlow server backup failed: " . $e->getMessage());
 
         logAction("System", "Backup Failed", ($session_name ?? 'Unknown User') . " failed to create server-side backup");
-        appNotify("Backup Failed", "Server-side backup failed: " . $e->getMessage());
+        itflowBackupSafeNotify("Backup Failed", "Server-side backup failed: " . $e->getMessage());
 
         flash_alert("Server backup failed: " . nullable_htmlentities($e->getMessage()), 'error');
     }
@@ -1262,14 +1277,14 @@ if (isset($_POST['restore_server_backup'])) {
         $result = itflowRunRestoreFromBackupArchive($realFile, $session_name ?? 'Unknown User');
 
         logAction("System", "Restore", ($session_name ?? 'Unknown User') . " restored ITFlow from backup " . $name . " after creating pre-restore backup " . ($result['pre_restore_backup'] ?? ''));
-        appNotify("Backup Completed", "Restore completed from backup: " . $name);
+        itflowBackupSafeNotify("Backup Completed", "Restore completed from backup: " . $name);
 
         flash_alert("Restore completed from backup " . nullable_htmlentities($name) . ". Pre-restore safety backup: " . nullable_htmlentities($result['pre_restore_backup'] ?? ''));
     } catch (Throwable $e) {
         error_log("ITFlow restore failed: " . $e->getMessage());
 
         logAction("System", "Restore Failed", ($session_name ?? 'Unknown User') . " failed to restore ITFlow from backup " . $name);
-        appNotify("Backup Failed", "Restore failed from backup " . $name . ": " . $e->getMessage());
+        itflowBackupSafeNotify("Backup Failed", "Restore failed from backup " . $name . ": " . $e->getMessage());
 
         flash_alert("Restore failed: " . nullable_htmlentities($e->getMessage()), 'error');
     }
