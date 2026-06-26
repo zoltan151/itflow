@@ -1,5 +1,261 @@
 <?php
 
+// ITFLOW_TICKET_POST_HELPER_COMPAT_FIX - helper functions required by reply/status submit and assignment notifications.
+if (!function_exists('ticketPostGetCurrentStatusId')) {
+    function ticketPostGetCurrentStatusId(int $ticket_id): int {
+        global $mysqli;
+
+        $ticket_id = intval($ticket_id);
+        if ($ticket_id <= 0) {
+            return 0;
+        }
+
+        $sql = mysqli_query($mysqli, "SELECT ticket_status FROM tickets WHERE ticket_id = $ticket_id LIMIT 1");
+        if ($sql && mysqli_num_rows($sql) > 0) {
+            $row = mysqli_fetch_assoc($sql);
+            return intval($row['ticket_status']);
+        }
+
+        return 0;
+    }
+}
+
+if (!function_exists('ticketPostNotifyTicketRecipient')) {
+    function ticketPostNotifyTicketRecipient(int $ticket_id, string $event_label, string $recipient, string $recipient_name = ''): bool {
+        global $mysqli, $config_app_name, $config_ticket_from_email,
+               $config_ticket_from_name, $config_base_url, $session_name, $session_company_name;
+
+        $ticket_id = intval($ticket_id);
+        $recipient = sanitizeInput($recipient);
+        $recipient_name = sanitizeInput($recipient_name ?: $recipient);
+
+        if ($ticket_id <= 0 || empty($recipient) || !filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+            return false;
+        }
+
+        $sql = mysqli_query($mysqli, "SELECT
+                tickets.ticket_id,
+                tickets.ticket_prefix,
+                tickets.ticket_number,
+                tickets.ticket_subject,
+                tickets.ticket_details,
+                tickets.ticket_priority,
+                tickets.ticket_status,
+                tickets.ticket_url_key,
+                tickets.ticket_client_id,
+                clients.client_name,
+                contacts.contact_name,
+                contacts.contact_email,
+                ticket_statuses.ticket_status_name
+            FROM tickets
+            LEFT JOIN clients ON ticket_client_id = client_id
+            LEFT JOIN contacts ON ticket_contact_id = contact_id
+            LEFT JOIN ticket_statuses ON ticket_status = ticket_status_id
+            WHERE ticket_id = $ticket_id
+            LIMIT 1");
+
+        if (!$sql || mysqli_num_rows($sql) === 0) {
+            return false;
+        }
+
+        $row = mysqli_fetch_assoc($sql);
+
+        $ticket_prefix = sanitizeInput($row['ticket_prefix']);
+        $ticket_number = intval($row['ticket_number']);
+        $ticket_subject = sanitizeInput($row['ticket_subject']);
+        $ticket_details = (string)($row['ticket_details'] ?? '');
+        $ticket_priority = sanitizeInput($row['ticket_priority']);
+        $ticket_status_name = sanitizeInput($row['ticket_status_name'] ?: getTicketStatusName($row['ticket_status']));
+        $client_id = intval($row['ticket_client_id']);
+        $client_name = sanitizeInput($row['client_name'] ?: 'Guest / Unassigned Client');
+        $contact_name = sanitizeInput($row['contact_name'] ?: 'No contact');
+        $contact_email = sanitizeInput($row['contact_email'] ?: 'No contact email');
+
+        $config_ticket_from_email = sanitizeInput($config_ticket_from_email);
+        $config_ticket_from_name = sanitizeInput($config_ticket_from_name);
+        $base_url = sanitizeInput($config_base_url);
+        $app_name = sanitizeInput($config_app_name ?: 'ITFlow');
+        $event_label_clean = sanitizeInput($event_label);
+        $session_name_clean = sanitizeInput($session_name ?? 'ITFlow');
+        $company_name = sanitizeInput($session_company_name ?? 'ITFlow');
+
+        $client_uri = $client_id ? "&client_id=$client_id" : '';
+        $agent_link = "https://$base_url/agent/ticket.php?ticket_id=$ticket_id$client_uri";
+
+        $safe_details = $ticket_details;
+        $safe_details = preg_replace('/<\s*(script|style|iframe|object|embed|form|input|button|select|textarea|link|meta|base)[^>]*>.*?<\s*\/\s*\1\s*>/is', '', $safe_details);
+        $safe_details = preg_replace('/<\s*(script|style|iframe|object|embed|form|input|button|select|textarea|link|meta|base)\b[^>]*\/?\s*>/is', '', $safe_details);
+        $safe_details = preg_replace('/\s+on[a-z]+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $safe_details);
+        if (strlen($safe_details) > 20000) {
+            $safe_details = substr($safe_details, 0, 20000) . "<br><br><i>[Ticket details truncated in notification email. Open the ticket for the full details.]</i>";
+        }
+
+        $email_subject = "$app_name - $event_label_clean - [$ticket_prefix$ticket_number] $ticket_subject";
+        $email_body = "Hello,<br><br>"
+            . "This is a notification that a ticket requires helpdesk attention.<br><br>"
+            . "Event: $event_label_clean<br>"
+            . "Client: $client_name<br>"
+            . "Contact: $contact_name &lt;$contact_email&gt;<br>"
+            . "Priority: $ticket_priority<br>"
+            . "Status: $ticket_status_name<br>"
+            . "Ticket: $ticket_prefix$ticket_number<br>"
+            . "Subject: $ticket_subject<br>"
+            . "Updated by: $session_name_clean<br>"
+            . "Link: <a href='$agent_link'>$agent_link</a><br><br>"
+            . "--------------------------------<br><br>"
+            . $safe_details
+            . "<br><br>--<br>$company_name<br>$config_ticket_from_email";
+
+        $data = [
+            [
+                'from' => $config_ticket_from_email,
+                'from_name' => $config_ticket_from_name,
+                'recipient' => $recipient,
+                'recipient_name' => $recipient_name,
+                'subject' => mysqli_real_escape_string($mysqli, $email_subject),
+                'body' => mysqli_real_escape_string($mysqli, $email_body),
+            ]
+        ];
+
+        addToMailQueue($data);
+        return true;
+    }
+}
+
+
+
+if (!function_exists('ticketPostResolveReplyTargetStatusId')) {
+    function ticketPostResolveReplyTargetStatusId(...$args): int {
+        global $mysqli, $config_ticket_reply_target_status_id;
+
+        /*
+         * Compatibility helper for the ticket reply/status submit path.
+         *
+         * Priority:
+         * 1. Explicit status selected in the reply composer POST.
+         * 2. Explicit numeric status passed by caller.
+         * 3. Configured reply target status.
+         * 4. Current ticket status from DB.
+         * 5. 0 as safe fallback.
+         */
+
+        $posted_status_keys = [
+            'status',
+            'ticket_status',
+            'ticket_status_id',
+            'new_ticket_status_id',
+            'ticket_reply_status_id',
+        ];
+
+        foreach ($posted_status_keys as $key) {
+            if (isset($_POST[$key]) && is_numeric($_POST[$key])) {
+                $posted_status = intval($_POST[$key]);
+                if ($posted_status > 0) {
+                    return $posted_status;
+                }
+            }
+        }
+
+        foreach (array_reverse($args) as $arg) {
+            if (is_numeric($arg)) {
+                $status_id = intval($arg);
+                if ($status_id > 0) {
+                    // Avoid treating the ticket ID as the status if the caller passed only one value
+                    // and it matches the active ticket id in POST.
+                    $posted_ticket_id = 0;
+                    if (isset($_POST['ticket_id']) && is_numeric($_POST['ticket_id'])) {
+                        $posted_ticket_id = intval($_POST['ticket_id']);
+                    }
+                    if ($posted_ticket_id > 0 && count($args) === 1 && $status_id === $posted_ticket_id) {
+                        continue;
+                    }
+                    return $status_id;
+                }
+            }
+        }
+
+        $configured_status = intval($config_ticket_reply_target_status_id ?? 0);
+        if ($configured_status > 0) {
+            return $configured_status;
+        }
+
+        $ticket_id = 0;
+
+        if (isset($_POST['ticket_id']) && is_numeric($_POST['ticket_id'])) {
+            $ticket_id = intval($_POST['ticket_id']);
+        }
+
+        if ($ticket_id <= 0) {
+            foreach ($args as $arg) {
+                if (is_numeric($arg)) {
+                    $candidate = intval($arg);
+                    if ($candidate > 0) {
+                        $ticket_id = $candidate;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if ($ticket_id > 0 && function_exists('ticketPostGetCurrentStatusId')) {
+            return intval(ticketPostGetCurrentStatusId($ticket_id));
+        }
+
+        if ($ticket_id > 0) {
+            $sql = mysqli_query($mysqli, "SELECT ticket_status FROM tickets WHERE ticket_id = $ticket_id LIMIT 1");
+            if ($sql && mysqli_num_rows($sql) > 0) {
+                $row = mysqli_fetch_assoc($sql);
+                return intval($row['ticket_status']);
+            }
+        }
+
+        return 0;
+    }
+}
+
+
+
+if (!function_exists('ticketPostNotifyConfiguredHelpdesk')) {
+    function ticketPostNotifyConfiguredHelpdesk(int $ticket_id, string $event_label = 'Ticket Updated'): bool {
+        global $config_ticket_new_ticket_notification_email,
+               $config_ticket_agent_notification_route_to_email;
+
+        $recipients = [];
+
+        foreach ([
+            $config_ticket_agent_notification_route_to_email ?? '',
+            $config_ticket_new_ticket_notification_email ?? '',
+        ] as $recipient_string) {
+            $recipient_string = trim((string)$recipient_string);
+            if ($recipient_string === '') {
+                continue;
+            }
+
+            foreach (preg_split('/[,;\s]+/', $recipient_string) as $recipient) {
+                $recipient = trim($recipient);
+                if ($recipient !== '' && filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+                    $recipients[$recipient] = $recipient;
+                }
+            }
+        }
+
+        if (empty($recipients)) {
+            return false;
+        }
+
+        $sent = false;
+
+        foreach ($recipients as $recipient) {
+            if (function_exists('ticketPostNotifyTicketRecipient')) {
+                $sent = ticketPostNotifyTicketRecipient($ticket_id, $event_label, $recipient, $recipient) || $sent;
+            }
+        }
+
+        return $sent;
+    }
+}
+
+
 /*
  * ITFlow - GET/POST request handler for client tickets
  */
