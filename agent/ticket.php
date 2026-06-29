@@ -570,7 +570,7 @@ if (isset($_GET['ticket_id'])) {
 
                 </div>
 
-                                <!-- ITFLOW_TICKET_CONVERSATION_ACTIVITY_DIVIDER -->
+                <!-- ITFLOW_TICKET_CONVERSATION_ACTIVITY_DIVIDER -->
                 <?php
                 $ticket_activity_event_count_display = intval($ticket_events_count ?? 0);
                 $ticket_reply_count_display = intval($ticket_all_comments_count ?? 0);
@@ -581,18 +581,18 @@ if (isset($_GET['ticket_id'])) {
                 }
                 ?>
 
-                <div class="card card-outline card-secondary d-print-none mb-3" id="ticketConversationActivity">
-                    <div class="card-header bg-light">
-                        <div class="d-flex flex-wrap justify-content-between align-items-center">
+                <div class="card d-print-none my-4" id="ticketConversationActivity" style="border-top: 6px double #6c757d; border-bottom: 4px solid #6c757d;">
+                    <div class="card-header bg-light py-3">
+                        <div class="d-flex flex-wrap justify-content-between align-items-start">
                             <div class="mb-2 mb-md-0">
-                                <h5 class="card-title mb-0">
+                                <div class="h4 mb-1 font-weight-bold text-dark">
                                     <i class="fas fa-fw fa-comments mr-2 text-secondary"></i>Conversation &amp; Activity
-                                </h5>
-                                <div class="text-muted small mt-1">
+                                </div>
+                                <div class="text-muted small d-block">
                                     Replies, internal notes, status changes, and ticket events.
                                 </div>
                             </div>
-                            <div class="text-nowrap">
+                            <div class="text-nowrap mt-1">
                                 <span class="badge badge-light border mr-1">
                                     <i class="fas fa-fw fa-comment mr-1 text-secondary"></i><?php echo $ticket_reply_count_display; ?> replies
                                 </span>
