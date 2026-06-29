@@ -671,67 +671,139 @@ if (isset($_GET['ticket_id'])) {
                 <?php
                 // ITFLOW_INLINE_TICKET_TIMELINE_EVENTS
                 $ticket_timeline_items = [];
+                $ticket_timeline_seen = [];
+
+                $ticketTimelineAdd = function (array $item) use (&$ticket_timeline_items, &$ticket_timeline_seen) {
+                    $item['_timeline_time'] = (string)($item['_timeline_time'] ?? '');
+                    $item['_timeline_epoch'] = strtotime($item['_timeline_time']) ?: 0;
+                    $item['_timeline_sort_id'] = intval($item['_timeline_sort_id'] ?? 0);
+                    $item['_timeline_weight'] = intval($item['_timeline_weight'] ?? 50);
+
+                    $dedupe_key = (string)($item['_timeline_key'] ?? '');
+                    if ($dedupe_key !== '') {
+                        if (isset($ticket_timeline_seen[$dedupe_key])) {
+                            return;
+                        }
+                        $ticket_timeline_seen[$dedupe_key] = true;
+                    }
+
+                    $ticket_timeline_items[] = $item;
+                };
 
                 while ($row = mysqli_fetch_assoc($sql_ticket_replies)) {
-                    $row['_timeline_type'] = 'reply';
-                    $row['_timeline_time'] = $row['ticket_reply_created_at'] ?? '';
-                    $row['_timeline_sort_id'] = intval($row['ticket_reply_id'] ?? 0);
-                    $ticket_timeline_items[] = $row;
-                }
+                    $reply_type = (string)($row['ticket_reply_type'] ?? '');
+                    $reply_text = trim(strip_tags((string)($row['ticket_reply'] ?? '')));
+                    $reply_time = (string)($row['ticket_reply_created_at'] ?? '');
+                    $reply_id = intval($row['ticket_reply_id'] ?? 0);
 
-                $ticket_history_count_for_timeline = 0;
-                while ($row = mysqli_fetch_assoc($sql_ticket_events)) {
-                    $ticket_history_count_for_timeline++;
-                    $ticket_timeline_items[] = [
-                        '_timeline_type' => 'history',
-                        '_timeline_time' => $row['ticket_history_created_at'] ?? '',
-                        '_timeline_sort_id' => intval($row['ticket_history_id'] ?? 0),
-                        '_timeline_description' => $row['ticket_history_description'] ?? '',
-                        '_timeline_status' => $row['ticket_history_status'] ?? '',
-                        '_timeline_actor' => '',
-                    ];
-                }
-
-                // Fallback for older tickets that have no ticket_history rows yet.
-                // This makes existing create/resolve/close/reopen actions visible inline without DB backfill.
-                if ($ticket_history_count_for_timeline === 0) {
-                    $sql_ticket_log_events = mysqli_query(
-                        $mysqli,
-                        "SELECT logs.*, users.user_name
-                        FROM logs
-                        LEFT JOIN users ON logs.log_user_id = users.user_id
-                        WHERE log_type = 'Ticket'
-                        AND log_entity_id = $ticket_id
-                        AND log_action IN ('Create', 'Resolved', 'Resolve', 'Closed', 'Close', 'Reopen', 'Merged')
-                        ORDER BY log_id DESC"
-                    );
-
-                    while ($row = mysqli_fetch_assoc($sql_ticket_log_events)) {
-                        $actor = $row['user_name'] ?: 'System';
-                        if (intval($row['log_user_id'] ?? 0) === 0 && stripos((string)$row['log_description'], 'Email parser') !== false) {
-                            $actor = 'Email Parser';
-                        }
-
-                        $ticket_timeline_items[] = [
-                            '_timeline_type' => 'log',
-                            '_timeline_time' => $row['log_created_at'] ?? '',
-                            '_timeline_sort_id' => intval($row['log_id'] ?? 0),
-                            '_timeline_description' => $row['log_description'] ?? '',
-                            '_timeline_status' => $row['log_action'] ?? '',
-                            '_timeline_actor' => $actor,
-                        ];
+                    // Give status/action-looking internal notes a lower weight so the actual status event can sit beside them.
+                    $reply_weight = 50;
+                    if ($reply_type === 'Internal' && preg_match('/^(ticket closed\.|ticket reopened\.|ticket resolved\.|status changed)/i', $reply_text)) {
+                        $reply_weight = 70;
                     }
+
+                    $row['_timeline_type'] = 'reply';
+                    $row['_timeline_time'] = $reply_time;
+                    $row['_timeline_sort_id'] = $reply_id;
+                    $row['_timeline_weight'] = $reply_weight;
+                    $row['_timeline_key'] = "reply:$reply_id";
+                    $ticketTimelineAdd($row);
+                }
+
+                while ($row = mysqli_fetch_assoc($sql_ticket_events)) {
+                    $history_id = intval($row['ticket_history_id'] ?? 0);
+                    $history_status = (string)($row['ticket_history_status'] ?? '');
+                    $history_description = (string)($row['ticket_history_description'] ?? '');
+                    $history_time = (string)($row['ticket_history_created_at'] ?? '');
+
+                    $timeline_weight = 30;
+                    if (stripos($history_description, 'changed status') !== false) {
+                        $timeline_weight = 25;
+                    }
+
+                    $ticketTimelineAdd([
+                        '_timeline_type' => 'history',
+                        '_timeline_time' => $history_time,
+                        '_timeline_sort_id' => $history_id,
+                        '_timeline_weight' => $timeline_weight,
+                        '_timeline_key' => "history:$history_id",
+                        '_timeline_description' => $history_description,
+                        '_timeline_status' => $history_status,
+                        '_timeline_actor' => '',
+                    ]);
+                }
+
+                // Always merge important ticket logs too.
+                // This fills gaps on older tickets where ticket_history was not written yet,
+                // and it preserves resolve/close/reopen events that happened before this feature existed.
+                $sql_ticket_log_events = mysqli_query(
+                    $mysqli,
+                    "SELECT logs.*, users.user_name
+                    FROM logs
+                    LEFT JOIN users ON logs.log_user_id = users.user_id
+                    WHERE log_type = 'Ticket'
+                    AND log_entity_id = $ticket_id
+                    AND log_action IN ('Create', 'Resolved', 'Resolve', 'Closed', 'Close', 'Reopen', 'Reopened', 'Merged')
+                    ORDER BY log_created_at DESC, log_id DESC"
+                );
+
+                while ($row = mysqli_fetch_assoc($sql_ticket_log_events)) {
+                    $log_id = intval($row['log_id'] ?? 0);
+                    $log_action = (string)($row['log_action'] ?? '');
+                    $log_description = (string)($row['log_description'] ?? '');
+                    $log_created_at = (string)($row['log_created_at'] ?? '');
+                    $log_user_id = intval($row['log_user_id'] ?? 0);
+
+                    $actor = $row['user_name'] ?: 'System';
+                    if ($log_user_id === 0 && stripos($log_description, 'Email parser') !== false) {
+                        $actor = 'Email Parser';
+                    }
+
+                    // If a new ticket_history status-change event exists at the same time for the same action,
+                    // keep the richer history row and skip the matching log. For pre-feature logs, show the log.
+                    $dedupe_key = '';
+                    $log_action_lc = strtolower($log_action);
+                    if (in_array($log_action_lc, ['reopen', 'reopened', 'close', 'closed'], true)) {
+                        $dedupe_key = "status-action:" . $log_action_lc . ":" . $log_created_at;
+                    }
+
+                    $timeline_weight = 35;
+                    if (in_array($log_action_lc, ['resolve', 'resolved', 'close', 'closed', 'reopen', 'reopened'], true)) {
+                        $timeline_weight = 20;
+                    } elseif ($log_action_lc === 'create') {
+                        $timeline_weight = 80;
+                    }
+
+                    $ticketTimelineAdd([
+                        '_timeline_type' => 'log',
+                        '_timeline_time' => $log_created_at,
+                        '_timeline_sort_id' => $log_id,
+                        '_timeline_weight' => $timeline_weight,
+                        '_timeline_key' => $dedupe_key !== '' ? $dedupe_key : "log:$log_id",
+                        '_timeline_description' => $log_description,
+                        '_timeline_status' => $log_action,
+                        '_timeline_actor' => $actor,
+                    ]);
                 }
 
                 usort($ticket_timeline_items, function ($a, $b) {
-                    $a_time = strtotime((string)($a['_timeline_time'] ?? '')) ?: 0;
-                    $b_time = strtotime((string)($b['_timeline_time'] ?? '')) ?: 0;
+                    $a_time = intval($a['_timeline_epoch'] ?? 0);
+                    $b_time = intval($b['_timeline_epoch'] ?? 0);
 
-                    if ($a_time === $b_time) {
-                        return intval($b['_timeline_sort_id'] ?? 0) <=> intval($a['_timeline_sort_id'] ?? 0);
+                    // Newest first, matching the existing ticket reply UI behavior.
+                    if ($a_time !== $b_time) {
+                        return $b_time <=> $a_time;
                     }
 
-                    return $b_time <=> $a_time;
+                    // Same timestamp: show status/action event before the note/reply it caused.
+                    $a_weight = intval($a['_timeline_weight'] ?? 50);
+                    $b_weight = intval($b['_timeline_weight'] ?? 50);
+                    if ($a_weight !== $b_weight) {
+                        return $a_weight <=> $b_weight;
+                    }
+
+                    // Final stable tie-breaker.
+                    return intval($b['_timeline_sort_id'] ?? 0) <=> intval($a['_timeline_sort_id'] ?? 0);
                 });
 
                 foreach ($ticket_timeline_items as $row) {
