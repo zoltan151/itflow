@@ -400,7 +400,8 @@ $sql_categories_filter = mysqli_query(
                                 <label>Ticket Status</label>
                                 <select onchange="this.form.submit()" class="form-control select2" name="status[]" data-placeholder="Select Status" multiple>
                                     <!-- ITFLOW_TICKET_STATUS_FILTER_ANY_OPTION -->
-                                    <option value="" <?php if (!isset($_GET['status']) || !is_array($_GET['status']) || empty(array_filter(array_map('intval', $_GET['status'])))) { echo "selected"; } ?>>Any</option>
+                                    <!-- ITFLOW_TICKET_STATUS_FILTER_ANY_VISIBLE_VALUE -->
+                                    <option value="any" <?php if (!isset($_GET['status']) || !is_array($_GET['status']) || empty(array_filter(array_map('intval', $_GET['status'])))) { echo "selected"; } ?>>Any</option>
 
                                         <?php $sql_ticket_status = mysqli_query($mysqli, "SELECT * FROM ticket_statuses WHERE ticket_status_active = 1 ORDER BY ticket_status_order");
                                         while ($row = mysqli_fetch_assoc($sql_ticket_status)) {
