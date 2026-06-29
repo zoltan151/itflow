@@ -403,7 +403,7 @@ require_once '../../../includes/modal_footer.php';
 
     // ITFLOW_NEW_TICKET_HIDDEN_TAB_REQUIRED_VALIDATION
     function fieldRoot(field) {
-        return field.closest('.form-group, .input-group, .col, .col-md-3, .col-md-4, .col-md-6, .col-md-8, .col-md-12, .form-row, .row') || field.parentElement || field;
+        return field.closest('.form-group, .input-group, .col, .col-md-2, .col-md-3, .col-md-4, .col-md-5, .col-md-6, .col-md-8, .col-md-9, .col-md-12, .form-row, .row') || field.parentElement || field;
     }
 
     function findNearbyLabel(field) {
@@ -472,33 +472,129 @@ require_once '../../../includes/modal_footer.php';
         return false;
     }
 
+    // ITFLOW_NEW_TICKET_MODAL_WIDE_REQUIRED_VALIDATION
+    function validationScope(form) {
+        return (form && form.closest && form.closest('.modal')) || form || document;
+    }
+
+    function isSkippableValidationField(field) {
+        var type = (field.type || '').toLowerCase();
+
+        if (field.disabled) {
+            return true;
+        }
+
+        if (type === 'hidden' || type === 'button' || type === 'submit' || type === 'reset') {
+            return true;
+        }
+
+        if (field.closest('.note-toolbar') || field.closest('.tox-toolbar') || field.closest('.ql-toolbar')) {
+            return true;
+        }
+
+        if (field.hasAttribute('data-itflow-ignore-required-validation')) {
+            return true;
+        }
+
+        return false;
+    }
+
+    function findRequiredFieldForLabel(label, scope) {
+        var field = null;
+
+        if (!label) {
+            return null;
+        }
+
+        if (label.getAttribute('for')) {
+            try {
+                field = document.getElementById(label.getAttribute('for'));
+            } catch (error) {}
+        }
+
+        if (field && !isSkippableValidationField(field)) {
+            return field;
+        }
+
+        var containers = [
+            label.closest('.form-group'),
+            label.closest('.input-group'),
+            label.closest('.col-md-12'),
+            label.closest('.col-md-8'),
+            label.closest('.col-md-6'),
+            label.closest('.col-md-4'),
+            label.closest('.col-md-3'),
+            label.closest('.col'),
+            label.parentElement
+        ].filter(function (item, index, array) {
+            return item && array.indexOf(item) === index;
+        });
+
+        for (var i = 0; i < containers.length; i++) {
+            field = containers[i].querySelector('select, textarea, input:not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"])');
+            if (field && !isSkippableValidationField(field)) {
+                return field;
+            }
+        }
+
+        var pane = label.closest('.tab-pane, [role="tabpanel"]');
+        if (pane) {
+            var labels = Array.prototype.slice.call(pane.querySelectorAll('label'));
+            var labelIndex = labels.indexOf(label);
+            var fields = Array.prototype.slice.call(pane.querySelectorAll('select, textarea, input:not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"])')).filter(function (candidate) {
+                return !isSkippableValidationField(candidate);
+            });
+
+            if (fields.length === 1) {
+                return fields[0];
+            }
+
+            if (labelIndex >= 0 && fields[labelIndex]) {
+                return fields[labelIndex];
+            }
+        }
+
+        return null;
+    }
+
+    function requiredFieldsFromStarLabels(scope) {
+        var fields = [];
+
+        Array.prototype.slice.call(scope.querySelectorAll('label')).forEach(function (label) {
+            if (textOf(label).indexOf('*') === -1) {
+                return;
+            }
+
+            var field = findRequiredFieldForLabel(label, scope);
+            if (field && fields.indexOf(field) === -1) {
+                fields.push(field);
+            }
+        });
+
+        return fields;
+    }
+
     function getRequiredFields(form) {
-        var fields = Array.prototype.slice.call(form.querySelectorAll('input, select, textarea')).filter(function (field) {
-            var type = (field.type || '').toLowerCase();
-
-            if (field.disabled) {
-                return false;
-            }
-
-            if (type === 'hidden' || type === 'button' || type === 'submit' || type === 'reset') {
-                return false;
-            }
-
-            if (field.closest('.note-toolbar') || field.closest('.tox-toolbar') || field.closest('.ql-toolbar')) {
-                return false;
-            }
-
-            if (field.hasAttribute('data-itflow-ignore-required-validation')) {
+        var scope = validationScope(form);
+        var fields = Array.prototype.slice.call(scope.querySelectorAll('input, select, textarea')).filter(function (field) {
+            if (isSkippableValidationField(field)) {
                 return false;
             }
 
             return fieldLooksRequired(field);
         });
 
+        requiredFieldsFromStarLabels(scope).forEach(function (field) {
+            if (fields.indexOf(field) === -1) {
+                fields.push(field);
+            }
+        });
+
         // Deduplicate radio/checkbox groups so one missing group does not produce repeated tab counts.
         var seenGroups = {};
         return fields.filter(function (field) {
             var type = (field.type || '').toLowerCase();
+
             if ((type === 'checkbox' || type === 'radio') && field.name) {
                 var key = type + ':' + field.name;
                 if (seenGroups[key]) {
