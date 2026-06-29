@@ -570,6 +570,45 @@ if (isset($_GET['ticket_id'])) {
 
                 </div>
 
+                                <!-- ITFLOW_TICKET_CONVERSATION_ACTIVITY_DIVIDER -->
+                <?php
+                $ticket_activity_event_count_display = intval($ticket_events_count ?? 0);
+                $ticket_reply_count_display = intval($ticket_all_comments_count ?? 0);
+                $ticket_total_time_display = '';
+
+                if (!empty($ticket_total_reply_time) && $ticket_total_reply_time !== '00:00:00') {
+                    $ticket_total_time_display = formatDuration($ticket_total_reply_time);
+                }
+                ?>
+
+                <div class="card card-outline card-secondary d-print-none mb-3" id="ticketConversationActivity">
+                    <div class="card-header bg-light">
+                        <div class="d-flex flex-wrap justify-content-between align-items-center">
+                            <div class="mb-2 mb-md-0">
+                                <h5 class="card-title mb-0">
+                                    <i class="fas fa-fw fa-comments mr-2 text-secondary"></i>Conversation &amp; Activity
+                                </h5>
+                                <div class="text-muted small mt-1">
+                                    Replies, internal notes, status changes, and ticket events.
+                                </div>
+                            </div>
+                            <div class="text-nowrap">
+                                <span class="badge badge-light border mr-1">
+                                    <i class="fas fa-fw fa-comment mr-1 text-secondary"></i><?php echo $ticket_reply_count_display; ?> replies
+                                </span>
+                                <span class="badge badge-light border mr-1">
+                                    <i class="fas fa-fw fa-history mr-1 text-secondary"></i><?php echo $ticket_activity_event_count_display; ?> events
+                                </span>
+                                <?php if (!empty($ticket_total_time_display)) { ?>
+                                    <span class="badge badge-light border">
+                                        <i class="far fa-fw fa-clock mr-1 text-secondary"></i><?php echo $ticket_total_time_display; ?> worked
+                                    </span>
+                                <?php } ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Only show ticket reply modal if status is not closed -->
                 <?php if (lookupUserPermission("module_support") >= 2 && empty($ticket_resolved_at) && empty($ticket_closed_at)) { ?>
 
