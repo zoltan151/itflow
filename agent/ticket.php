@@ -667,10 +667,121 @@ if (isset($_GET['ticket_id'])) {
                     <!-- End IF for reply modal -->
                 <?php } ?>
 
-                <!-- Ticket replies -->
+                <!-- Ticket replies / inline activity timeline -->
                 <?php
+                // ITFLOW_INLINE_TICKET_TIMELINE_EVENTS
+                $ticket_timeline_items = [];
 
                 while ($row = mysqli_fetch_assoc($sql_ticket_replies)) {
+                    $row['_timeline_type'] = 'reply';
+                    $row['_timeline_time'] = $row['ticket_reply_created_at'] ?? '';
+                    $row['_timeline_sort_id'] = intval($row['ticket_reply_id'] ?? 0);
+                    $ticket_timeline_items[] = $row;
+                }
+
+                $ticket_history_count_for_timeline = 0;
+                while ($row = mysqli_fetch_assoc($sql_ticket_events)) {
+                    $ticket_history_count_for_timeline++;
+                    $ticket_timeline_items[] = [
+                        '_timeline_type' => 'history',
+                        '_timeline_time' => $row['ticket_history_created_at'] ?? '',
+                        '_timeline_sort_id' => intval($row['ticket_history_id'] ?? 0),
+                        '_timeline_description' => $row['ticket_history_description'] ?? '',
+                        '_timeline_status' => $row['ticket_history_status'] ?? '',
+                        '_timeline_actor' => '',
+                    ];
+                }
+
+                // Fallback for older tickets that have no ticket_history rows yet.
+                // This makes existing create/resolve/close/reopen actions visible inline without DB backfill.
+                if ($ticket_history_count_for_timeline === 0) {
+                    $sql_ticket_log_events = mysqli_query(
+                        $mysqli,
+                        "SELECT logs.*, users.user_name
+                        FROM logs
+                        LEFT JOIN users ON logs.log_user_id = users.user_id
+                        WHERE log_type = 'Ticket'
+                        AND log_entity_id = $ticket_id
+                        AND log_action IN ('Create', 'Resolved', 'Resolve', 'Closed', 'Close', 'Reopen', 'Merged')
+                        ORDER BY log_id DESC"
+                    );
+
+                    while ($row = mysqli_fetch_assoc($sql_ticket_log_events)) {
+                        $actor = $row['user_name'] ?: 'System';
+                        if (intval($row['log_user_id'] ?? 0) === 0 && stripos((string)$row['log_description'], 'Email parser') !== false) {
+                            $actor = 'Email Parser';
+                        }
+
+                        $ticket_timeline_items[] = [
+                            '_timeline_type' => 'log',
+                            '_timeline_time' => $row['log_created_at'] ?? '',
+                            '_timeline_sort_id' => intval($row['log_id'] ?? 0),
+                            '_timeline_description' => $row['log_description'] ?? '',
+                            '_timeline_status' => $row['log_action'] ?? '',
+                            '_timeline_actor' => $actor,
+                        ];
+                    }
+                }
+
+                usort($ticket_timeline_items, function ($a, $b) {
+                    $a_time = strtotime((string)($a['_timeline_time'] ?? '')) ?: 0;
+                    $b_time = strtotime((string)($b['_timeline_time'] ?? '')) ?: 0;
+
+                    if ($a_time === $b_time) {
+                        return intval($b['_timeline_sort_id'] ?? 0) <=> intval($a['_timeline_sort_id'] ?? 0);
+                    }
+
+                    return $b_time <=> $a_time;
+                });
+
+                foreach ($ticket_timeline_items as $row) {
+                    // ITFLOW_INLINE_TICKET_TIMELINE_EVENT_RENDER
+                    if (($row['_timeline_type'] ?? '') !== 'reply') {
+                        $timeline_status = nullable_htmlentities($row['_timeline_status'] ?? '');
+                        $timeline_description = nullable_htmlentities($row['_timeline_description'] ?? '');
+                        $timeline_actor = nullable_htmlentities($row['_timeline_actor'] ?? '');
+                        $timeline_created_at = nullable_htmlentities($row['_timeline_time'] ?? '');
+                        $timeline_created_at_ago = timeAgo($row['_timeline_time'] ?? '');
+
+                        $timeline_icon = 'fa-history';
+                        $timeline_border = 'secondary';
+
+                        if (stripos($timeline_status, 'resolve') !== false || stripos($timeline_status, 'resolved') !== false) {
+                            $timeline_icon = 'fa-check';
+                            $timeline_border = 'success';
+                        } elseif (stripos($timeline_status, 'close') !== false || stripos($timeline_status, 'closed') !== false) {
+                            $timeline_icon = 'fa-gavel';
+                            $timeline_border = 'dark';
+                        } elseif (stripos($timeline_status, 'create') !== false || stripos($timeline_status, 'new') !== false) {
+                            $timeline_icon = 'fa-plus-circle';
+                            $timeline_border = 'primary';
+                        } elseif (stripos($timeline_description, 'status') !== false) {
+                            $timeline_icon = 'fa-exchange-alt';
+                            $timeline_border = 'info';
+                        }
+
+                        ?>
+                        <div class="card border-left border-<?php echo $timeline_border; ?> mb-3 d-print-none" style="border-left-width: 8px !important;">
+                            <div class="card-body py-2">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <i class="fas fa-fw <?php echo $timeline_icon; ?> text-<?php echo $timeline_border; ?> mr-2"></i>
+                                        <strong><?php echo $timeline_status ?: 'Ticket Activity'; ?></strong>
+                                        <span class="text-muted ml-1"><?php echo $timeline_description; ?></span>
+                                        <?php if (!empty($timeline_actor)) { ?>
+                                            <span class="text-muted ml-1">(<?php echo $timeline_actor; ?>)</span>
+                                        <?php } ?>
+                                    </div>
+                                    <small class="text-muted" title="<?php echo $timeline_created_at; ?>">
+                                        <?php echo $timeline_created_at_ago; ?>
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        <?php
+                        continue;
+                    }
+
                     $ticket_reply_id = intval($row['ticket_reply_id']);
                     $ticket_reply = $purifier->purify($row['ticket_reply']);
                     $ticket_reply_type = nullable_htmlentities($row['ticket_reply_type']);

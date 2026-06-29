@@ -5,6 +5,63 @@
 
 // ITFLOW_INTERNAL_STATUS_NOTIFY_ATTENTION_ONLY_FIX
 
+
+// ITFLOW_TICKET_STATUS_HISTORY_HELPERS
+if (!function_exists('ticketPostAddHistory')) {
+    function ticketPostAddHistory(int $ticket_id, string $status_name, string $description): bool {
+        global $mysqli;
+
+        $ticket_id = intval($ticket_id);
+        $status_name = sanitizeInput($status_name);
+        $description = sanitizeInput($description);
+
+        if ($ticket_id <= 0 || $description === '') {
+            return false;
+        }
+
+        $result = mysqli_query(
+            $mysqli,
+            "INSERT INTO ticket_history SET
+                ticket_history_status = '$status_name',
+                ticket_history_description = '$description',
+                ticket_history_ticket_id = $ticket_id"
+        );
+
+        return (bool)$result;
+    }
+}
+
+if (!function_exists('ticketPostAddStatusChangeHistory')) {
+    function ticketPostAddStatusChangeHistory(int $ticket_id, int $old_status_id, int $new_status_id, string $actor_name = ''): bool {
+        $ticket_id = intval($ticket_id);
+        $old_status_id = intval($old_status_id);
+        $new_status_id = intval($new_status_id);
+
+        if ($ticket_id <= 0 || $new_status_id <= 0 || $old_status_id === $new_status_id) {
+            return false;
+        }
+
+        $old_status_name = sanitizeInput(getTicketStatusName($old_status_id));
+        $new_status_name = sanitizeInput(getTicketStatusName($new_status_id));
+        $actor_name = sanitizeInput($actor_name ?: 'System');
+
+        if ($old_status_name === '') {
+            $old_status_name = 'Unknown';
+        }
+
+        if ($new_status_name === '') {
+            $new_status_name = 'Unknown';
+        }
+
+        return ticketPostAddHistory(
+            $ticket_id,
+            $new_status_name,
+            "$actor_name changed status from $old_status_name to $new_status_name"
+        );
+    }
+}
+
+
 if (!function_exists('ticketPostStatusRequiresInternalAttentionNotification')) {
     function ticketPostStatusRequiresInternalAttentionNotification(int $status_id, string $status_name = ''): bool {
         global $config_ticket_reply_target_status_id;
@@ -2097,6 +2154,8 @@ if (isset($_POST['bulk_resolve_tickets'])) {
                 // Update ticket & insert reply
                 mysqli_query($mysqli, "UPDATE tickets SET ticket_status = 4, ticket_resolved_at = NOW() WHERE ticket_id = $ticket_id");
 
+    ticketPostAddStatusChangeHistory($ticket_id, $original_ticket_status_id, 4, $session_name);
+
                 mysqli_query($mysqli, "INSERT INTO ticket_replies SET ticket_reply = '$details', ticket_reply_type = '$ticket_reply_type', ticket_reply_time_worked = '$ticket_reply_time_worked', ticket_reply_by = $session_user_id, ticket_reply_ticket_id = $ticket_id");
 
                 logAction("Ticket", "Resolve", "$session_name resolved $ticket_prefix$ticket_number - $ticket_subject", $client_id, $ticket_id);
@@ -2560,6 +2619,8 @@ if (isset($_POST['add_ticket_reply'])) {
     // Update Ticket Status & updated at (in case status didn't change)
     mysqli_query($mysqli, "UPDATE tickets SET ticket_status = $ticket_status, ticket_updated_at = NOW() WHERE ticket_id = $ticket_id");
 
+    ticketPostAddStatusChangeHistory($ticket_id, $original_ticket_status, $ticket_status, $session_name);
+
     if ($reply_target_status_id > 0 && $ticket_status === $reply_target_status_id && $original_ticket_status !== $reply_target_status_id) {
         $reply_target_status_name_for_notify = getTicketStatusName($reply_target_status_id);
         if (ticketPostStatusRequiresInternalAttentionNotification($reply_target_status_id, $reply_target_status_name_for_notify)) {
@@ -2905,6 +2966,7 @@ if (isset($_GET['resolve_ticket'])) {
     $ticket_prefix = sanitizeInput($row['ticket_prefix']);
     $ticket_number = intval($row['ticket_number']);
     $ticket_first_response_at = sanitizeInput($row['ticket_first_response_at']);
+    $original_ticket_status_id = intval($row['ticket_status']);
     $client_id = intval($row['ticket_client_id']);
 
     // Don't Enforce Client Access if Ticket doesn't have an assigned client
@@ -3013,6 +3075,8 @@ if (isset($_GET['close_ticket'])) {
 
     mysqli_query($mysqli, "UPDATE tickets SET ticket_status = 5, ticket_closed_at = NOW(), ticket_closed_by = $session_user_id WHERE ticket_id = $ticket_id") or die(mysqli_error($mysqli));
 
+    ticketPostAddStatusChangeHistory($ticket_id, $original_ticket_status_id, 5, $session_name);
+
     mysqli_query($mysqli, "INSERT INTO ticket_replies SET ticket_reply = 'Ticket closed.', ticket_reply_type = 'Internal', ticket_reply_time_worked = '00:01:00', ticket_reply_by = $session_user_id, ticket_reply_ticket_id = $ticket_id");
 
     logAction("Ticket", "Closed", "$session_name closed ticket ID $ticket_id", $client_id, $ticket_id);
@@ -3045,6 +3109,7 @@ if (isset($_GET['close_ticket'])) {
         // Get Company Info
         $sql = mysqli_query($mysqli, "SELECT company_name, company_phone, company_phone_country_code FROM companies WHERE company_id = 1");
         $row = mysqli_fetch_assoc($sql);
+    $original_ticket_status_id = intval($row['ticket_status'] ?? 0);
         $company_name = sanitizeInput($row['company_name']);
         $company_phone = sanitizeInput(formatPhoneNumber($row['company_phone'], $row['company_phone_country_code']));
 
@@ -3106,6 +3171,8 @@ if (isset($_GET['reopen_ticket'])) {
 
     mysqli_query($mysqli, "UPDATE tickets SET ticket_status = 2, ticket_resolved_at = NULL WHERE ticket_id = $ticket_id");
 
+    ticketPostAddStatusChangeHistory($ticket_id, $original_ticket_status_id, 2, $session_name);
+
     logAction("Ticket", "Reopened", "$session_name reopened ticket ID $ticket_id", $client_id, $ticket_id);
 
     customAction('ticket_update', $ticket_id);
@@ -3140,6 +3207,7 @@ if (isset($_POST['add_invoice_from_ticket'])) {
     );
 
     $row = mysqli_fetch_assoc($sql);
+    $original_ticket_status_id = intval($row['ticket_status'] ?? 0);
     $client_id = intval($row['client_id']);
     $client_net_terms = intval($row['client_net_terms']);
     if ($client_net_terms == 0) {
