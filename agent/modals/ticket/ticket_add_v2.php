@@ -326,3 +326,456 @@ $(document).on('change', '#ticket_template_select', function () {
 <?php
 
 require_once '../../../includes/modal_footer.php';
+?>
+
+<style>
+/* ITFLOW_NEW_TICKET_REQUIRED_TAB_VALIDATION */
+.itflow-required-tab-indicator {
+    margin-left: 0.25rem;
+    color: #dc3545;
+    font-weight: 700;
+}
+
+.itflow-required-tab-missing-badge {
+    display: inline-block;
+    margin-left: 0.35rem;
+    padding: 0.1rem 0.35rem;
+    border-radius: 0.5rem;
+    background: #dc3545;
+    color: #fff;
+    font-size: 0.7rem;
+    line-height: 1;
+    vertical-align: middle;
+}
+
+.itflow-tab-has-missing {
+    color: #dc3545 !important;
+    font-weight: 700;
+}
+
+.itflow-new-ticket-validation-alert {
+    margin: 0 0 1rem 0;
+}
+
+.itflow-new-ticket-invalid-field {
+    border-color: #dc3545 !important;
+}
+
+.select2-container.itflow-new-ticket-invalid-field .select2-selection {
+    border-color: #dc3545 !important;
+}
+</style>
+
+<script>
+// ITFLOW_NEW_TICKET_REQUIRED_TAB_VALIDATION
+(function () {
+    var initializedForms = [];
+
+    function textOf(element) {
+        return element ? (element.textContent || element.innerText || '').replace(/\s+/g, ' ').trim() : '';
+    }
+
+    function getNewTicketModals() {
+        return Array.prototype.slice.call(document.querySelectorAll('.modal')).filter(function (modal) {
+            var title = modal.querySelector('.modal-title, h1, h2, h3, h4, h5, h6');
+            var titleText = textOf(title);
+            var modalText = textOf(modal);
+            return titleText.indexOf('New Ticket') !== -1 || (
+                modalText.indexOf('New Ticket') !== -1 &&
+                modalText.indexOf('Details') !== -1 &&
+                modalText.indexOf('Contact') !== -1 &&
+                modalText.indexOf('Assignment') !== -1
+            );
+        });
+    }
+
+    function getForm(modal) {
+        return modal.querySelector('form');
+    }
+
+    function getCreateButtons(modal, form) {
+        var root = form || modal;
+        return Array.prototype.slice.call(root.querySelectorAll('button, input[type="submit"], input[type="button"]')).filter(function (button) {
+            var text = textOf(button) || button.value || '';
+            return /\bCreate\b/i.test(text);
+        });
+    }
+
+    function getRequiredFields(form) {
+        return Array.prototype.slice.call(form.querySelectorAll('input, select, textarea')).filter(function (field) {
+            if (field.disabled) {
+                return false;
+            }
+
+            if ((field.type || '').toLowerCase() === 'hidden') {
+                return false;
+            }
+
+            if (field.closest('.note-toolbar') || field.closest('.tox-toolbar') || field.closest('.ql-toolbar')) {
+                return false;
+            }
+
+            return field.required || field.getAttribute('aria-required') === 'true' || field.getAttribute('data-required') === 'true';
+        });
+    }
+
+    function fieldLabel(field) {
+        var label = null;
+
+        if (field.id) {
+            label = document.querySelector('label[for="' + field.id.replace(/"/g, '\\"') + '"]');
+        }
+
+        if (!label) {
+            var group = field.closest('.form-group, .input-group, .col, .col-md-3, .col-md-4, .col-md-6, .col-md-12');
+            if (group) {
+                label = group.querySelector('label');
+            }
+        }
+
+        var labelText = textOf(label);
+        if (labelText) {
+            return labelText.replace(/\*/g, '').trim();
+        }
+
+        return field.getAttribute('placeholder') || field.getAttribute('name') || 'Required field';
+    }
+
+    function getFieldValue(field) {
+        if (field.tagName === 'SELECT' && field.multiple) {
+            return Array.prototype.slice.call(field.selectedOptions).map(function (option) {
+                return option.value;
+            }).filter(function (value) {
+                return value !== '' && value !== 'any' && value !== '__clear__' && value.indexOf('__separator_') !== 0;
+            }).join(',');
+        }
+
+        if ((field.type || '').toLowerCase() === 'checkbox') {
+            if (!field.name) {
+                return field.checked ? 'checked' : '';
+            }
+
+            var group = field.form ? field.form.querySelectorAll('input[type="checkbox"][name="' + field.name.replace(/"/g, '\\"') + '"]') : [field];
+            return Array.prototype.slice.call(group).some(function (item) {
+                return item.checked;
+            }) ? 'checked' : '';
+        }
+
+        if ((field.type || '').toLowerCase() === 'radio') {
+            if (!field.name) {
+                return field.checked ? 'checked' : '';
+            }
+
+            var radios = field.form ? field.form.querySelectorAll('input[type="radio"][name="' + field.name.replace(/"/g, '\\"') + '"]') : [field];
+            return Array.prototype.slice.call(radios).some(function (item) {
+                return item.checked;
+            }) ? 'checked' : '';
+        }
+
+        return (field.value || '').trim();
+    }
+
+    function isInvalid(field) {
+        if (field.disabled) {
+            return false;
+        }
+
+        if (field.required && getFieldValue(field) === '') {
+            return true;
+        }
+
+        if (typeof field.checkValidity === 'function' && !field.checkValidity()) {
+            return true;
+        }
+
+        return false;
+    }
+
+    function getPane(field) {
+        return field.closest('.tab-pane, [role="tabpanel"]');
+    }
+
+    function getTabForPane(modal, pane) {
+        if (!pane || !pane.id) {
+            return null;
+        }
+
+        return modal.querySelector(
+            'a[href="#' + pane.id + '"], button[data-target="#' + pane.id + '"], a[data-target="#' + pane.id + '"], button[data-bs-target="#' + pane.id + '"], a[data-bs-target="#' + pane.id + '"]'
+        );
+    }
+
+    function cleanTabName(tab) {
+        var clone = tab.cloneNode(true);
+        Array.prototype.slice.call(clone.querySelectorAll('.itflow-required-tab-indicator, .itflow-required-tab-missing-badge')).forEach(function (item) {
+            item.parentNode.removeChild(item);
+        });
+        return textOf(clone) || 'Tab';
+    }
+
+    function clearValidation(modal) {
+        Array.prototype.slice.call(modal.querySelectorAll('.itflow-new-ticket-validation-alert')).forEach(function (alert) {
+            alert.parentNode.removeChild(alert);
+        });
+
+        Array.prototype.slice.call(modal.querySelectorAll('.itflow-tab-has-missing')).forEach(function (tab) {
+            tab.classList.remove('itflow-tab-has-missing');
+        });
+
+        Array.prototype.slice.call(modal.querySelectorAll('.itflow-required-tab-missing-badge')).forEach(function (badge) {
+            badge.parentNode.removeChild(badge);
+        });
+
+        Array.prototype.slice.call(modal.querySelectorAll('.itflow-new-ticket-invalid-field')).forEach(function (field) {
+            field.classList.remove('itflow-new-ticket-invalid-field');
+        });
+
+        Array.prototype.slice.call(modal.querySelectorAll('.is-invalid')).forEach(function (field) {
+            if (field.getAttribute('data-itflow-new-ticket-invalid') === '1') {
+                field.classList.remove('is-invalid');
+                field.removeAttribute('data-itflow-new-ticket-invalid');
+            }
+        });
+    }
+
+    function markInvalidField(field) {
+        field.classList.add('is-invalid');
+        field.setAttribute('data-itflow-new-ticket-invalid', '1');
+
+        if (window.jQuery && window.jQuery.fn && window.jQuery.fn.select2 && window.jQuery(field).data('select2')) {
+            var container = window.jQuery(field).next('.select2-container');
+            if (container && container.length) {
+                container.addClass('itflow-new-ticket-invalid-field');
+            }
+        } else {
+            field.classList.add('itflow-new-ticket-invalid-field');
+        }
+    }
+
+    function addRequiredTabIndicators(modal, form) {
+        var tabs = [];
+
+        getRequiredFields(form).forEach(function (field) {
+            var tab = getTabForPane(modal, getPane(field));
+            if (tab && tabs.indexOf(tab) === -1) {
+                tabs.push(tab);
+            }
+        });
+
+        tabs.forEach(function (tab) {
+            if (!tab.querySelector('.itflow-required-tab-indicator')) {
+                var indicator = document.createElement('span');
+                indicator.className = 'itflow-required-tab-indicator';
+                indicator.title = 'This tab has required fields';
+                indicator.textContent = '*';
+                tab.appendChild(indicator);
+            }
+        });
+    }
+
+    function markMissingTabs(modal, invalidFields) {
+        var tabCounts = [];
+        var tabOrder = [];
+
+        invalidFields.forEach(function (field) {
+            var tab = getTabForPane(modal, getPane(field));
+            if (!tab) {
+                return;
+            }
+
+            var existing = tabCounts.filter(function (item) {
+                return item.tab === tab;
+            })[0];
+
+            if (!existing) {
+                existing = { tab: tab, count: 0 };
+                tabCounts.push(existing);
+                tabOrder.push(tab);
+            }
+
+            existing.count++;
+        });
+
+        tabCounts.forEach(function (item) {
+            item.tab.classList.add('itflow-tab-has-missing');
+
+            var badge = document.createElement('span');
+            badge.className = 'itflow-required-tab-missing-badge';
+            badge.textContent = item.count + ' missing';
+            item.tab.appendChild(badge);
+        });
+
+        return tabOrder;
+    }
+
+    function showAlert(modal, tabNames, invalidFields) {
+        var body = modal.querySelector('.modal-body') || modal;
+        var alert = document.createElement('div');
+        alert.className = 'alert alert-danger itflow-new-ticket-validation-alert';
+        alert.setAttribute('role', 'alert');
+
+        var uniqueTabs = tabNames.filter(function (value, index, array) {
+            return value && array.indexOf(value) === index;
+        });
+
+        var fieldNames = invalidFields.slice(0, 5).map(fieldLabel).filter(function (value, index, array) {
+            return value && array.indexOf(value) === index;
+        });
+
+        var html = '<strong>Please finish the required fields before creating this ticket.</strong>';
+
+        if (uniqueTabs.length > 0) {
+            html += '<br>Missing required fields in: <strong>' + uniqueTabs.join(', ') + '</strong>.';
+        }
+
+        if (fieldNames.length > 0) {
+            html += '<br>Fields to check: ' + fieldNames.join(', ') + '.';
+        }
+
+        alert.innerHTML = html;
+        body.insertBefore(alert, body.firstChild);
+    }
+
+    function focusField(field) {
+        if (!field) {
+            return;
+        }
+
+        if (window.jQuery && window.jQuery.fn && window.jQuery.fn.select2 && window.jQuery(field).data('select2')) {
+            try {
+                window.jQuery(field).select2('open');
+                return;
+            } catch (error) {}
+        }
+
+        try {
+            field.focus({ preventScroll: false });
+        } catch (error) {
+            try {
+                field.focus();
+            } catch (ignored) {}
+        }
+    }
+
+    function showTab(tab) {
+        if (!tab) {
+            return;
+        }
+
+        if (window.jQuery && window.jQuery.fn && window.jQuery.fn.tab) {
+            window.jQuery(tab).tab('show');
+        } else {
+            tab.click();
+        }
+    }
+
+    function validateNewTicketForm(modal, form) {
+        if (window.tinymce && typeof window.tinymce.triggerSave === 'function') {
+            window.tinymce.triggerSave();
+        }
+
+        if (window.CKEDITOR && window.CKEDITOR.instances) {
+            Object.keys(window.CKEDITOR.instances).forEach(function (key) {
+                try {
+                    window.CKEDITOR.instances[key].updateElement();
+                } catch (error) {}
+            });
+        }
+
+        clearValidation(modal);
+        addRequiredTabIndicators(modal, form);
+
+        var invalidFields = getRequiredFields(form).filter(isInvalid);
+
+        if (invalidFields.length === 0) {
+            return true;
+        }
+
+        invalidFields.forEach(markInvalidField);
+
+        var missingTabs = markMissingTabs(modal, invalidFields);
+        var missingTabNames = missingTabs.map(cleanTabName);
+        showAlert(modal, missingTabNames, invalidFields);
+
+        var firstField = invalidFields[0];
+        var firstTab = missingTabs[0] || getTabForPane(modal, getPane(firstField));
+
+        showTab(firstTab);
+
+        window.setTimeout(function () {
+            focusField(firstField);
+        }, 250);
+
+        return false;
+    }
+
+    function installModal(modal) {
+        var form = getForm(modal);
+        if (!form || initializedForms.indexOf(form) !== -1) {
+            return;
+        }
+
+        initializedForms.push(form);
+        form.setAttribute('novalidate', 'novalidate');
+
+        addRequiredTabIndicators(modal, form);
+
+        getRequiredFields(form).forEach(function (field) {
+            ['input', 'change', 'blur'].forEach(function (eventName) {
+                field.addEventListener(eventName, function () {
+                    field.classList.remove('is-invalid');
+                    field.classList.remove('itflow-new-ticket-invalid-field');
+                    field.removeAttribute('data-itflow-new-ticket-invalid');
+
+                    if (window.jQuery && window.jQuery.fn && window.jQuery.fn.select2 && window.jQuery(field).data('select2')) {
+                        window.jQuery(field).next('.select2-container').removeClass('itflow-new-ticket-invalid-field');
+                    }
+                });
+            });
+        });
+
+        form.addEventListener('submit', function (event) {
+            if (form.getAttribute('data-itflow-new-ticket-validation-passed') === '1') {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            if (validateNewTicketForm(modal, form)) {
+                form.setAttribute('data-itflow-new-ticket-validation-passed', '1');
+                form.submit();
+            }
+        }, true);
+
+        getCreateButtons(modal, form).forEach(function (button) {
+            button.addEventListener('click', function (event) {
+                if (form.getAttribute('data-itflow-new-ticket-validation-passed') === '1') {
+                    return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+
+                if (validateNewTicketForm(modal, form)) {
+                    form.setAttribute('data-itflow-new-ticket-validation-passed', '1');
+                    form.submit();
+                }
+            }, true);
+        });
+    }
+
+    function install() {
+        getNewTicketModals().forEach(installModal);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', install);
+    } else {
+        install();
+    }
+
+    document.addEventListener('shown.bs.modal', install);
+})();
+</script>
+
