@@ -288,6 +288,16 @@ $sql_categories_filter = mysqli_query(
 );
 
 ?>
+
+<style>
+/* ITFLOW_TICKET_FILTER_SELECT2_ANTI_FLASH */
+/* Hide raw multi-select boxes before Select2 initializes, preventing dropdown-content flash on hard refresh. */
+select.itflow-ticket-filter-select {
+    visibility: hidden;
+}
+</style>
+
+
     <style>
         .popover {
             max-width: 600px;
