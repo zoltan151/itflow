@@ -22,7 +22,7 @@ enforceUserPermission('module_support');
 // A direct visit to Tickets should be an audit/review view: all statuses, all assignees.
 // Explicit quick filters like Open, Closed, My Tickets, Unassigned, client_id, search, category, project, etc. still work.
 $ticket_list_has_explicit_scope_filter = (
-    isset($_GET['status'])
+    (isset($_GET['status']) && (!is_array($_GET['status']) || count(array_filter(array_map('intval', $_GET['status']))) > 0))
     || isset($_GET['assigned'])
     || isset($_GET['unassigned'])
     || isset($_GET['user'])
@@ -48,29 +48,49 @@ if (isset($_GET['all_tickets'])) {
 
 
 
-// Ticket status from GET
+// ITFLOW_TICKET_STATUS_FILTER_ANY_LOGIC
+// Ticket status from GET. Blank / Any means all statuses.
+if (isset($_GET['status']) && is_array($_GET['status'])) {
+    $_GET['status'] = array_values(array_filter(array_map('intval', $_GET['status']), static function ($ticket_status_filter_value) {
+        return $ticket_status_filter_value > 0;
+    }));
+
+    if (empty($_GET['status'])) {
+        unset($_GET['status']);
+    }
+}
+
 if (isset($_GET['status']) && is_array($_GET['status']) && !empty($_GET['status'])) {
     // Sanitize each element of the status array
     $sanitizedStatuses = array();
     foreach ($_GET['status'] as $status) {
-        // Escape each status to prevent SQL injection
-        $sanitizedStatuses[] = "'" . intval($status) . "'";
+        $status = intval($status);
+        if ($status > 0) {
+            $sanitizedStatuses[] = "'" . $status . "'";
+        }
     }
 
-    // Convert the sanitized statuses into a comma-separated string
-    $sanitizedStatusesString = implode(",", $sanitizedStatuses);
-    $ticket_status_snippet = "ticket_status IN ($sanitizedStatusesString)";
+    if (!empty($sanitizedStatuses)) {
+        // Convert the sanitized statuses into a comma-separated string
+        $sanitizedStatusesString = implode(",", $sanitizedStatuses);
+        $ticket_status_snippet = "ticket_status IN ($sanitizedStatusesString)";
+    } else {
+        $status = 'All';
+        $ticket_status_snippet = "1=1";
+    }
 
 } else {
-
-    // TODO: Convert this to use the status IDs
-    if (isset($_GET['status']) && ($_GET['status']) == 'Closed') {
+    // Explicit quick filters still work.
+    if (isset($_GET['status']) && $_GET['status'] == 'Closed') {
         $status = 'Closed';
         $ticket_status_snippet = "ticket_resolved_at IS NOT NULL";
-    } else {
-        // Default - Show open tickets
+    } elseif (isset($_GET['status']) && $_GET['status'] == 'Open') {
         $status = 'Open';
         $ticket_status_snippet = "ticket_resolved_at IS NULL";
+    } else {
+        // Default / Any - Show all tickets regardless of status.
+        $status = 'All';
+        $ticket_status_snippet = "1=1";
     }
 }
 
@@ -379,6 +399,8 @@ $sql_categories_filter = mysqli_query(
                             <div class="form-group">
                                 <label>Ticket Status</label>
                                 <select onchange="this.form.submit()" class="form-control select2" name="status[]" data-placeholder="Select Status" multiple>
+                                    <!-- ITFLOW_TICKET_STATUS_FILTER_ANY_OPTION -->
+                                    <option value="" <?php if (!isset($_GET['status']) || !is_array($_GET['status']) || empty(array_filter(array_map('intval', $_GET['status'])))) { echo "selected"; } ?>>Any</option>
 
                                         <?php $sql_ticket_status = mysqli_query($mysqli, "SELECT * FROM ticket_statuses WHERE ticket_status_active = 1 ORDER BY ticket_status_order");
                                         while ($row = mysqli_fetch_assoc($sql_ticket_status)) {
