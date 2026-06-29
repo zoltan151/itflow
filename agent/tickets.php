@@ -681,6 +681,89 @@ if (window.jQuery && window.jQuery.fn && window.jQuery.fn.select2) {
 })();
 </script>
 
+
+<script>
+// ITFLOW_TICKET_DATE_ALL_TIME_DISPLAY_FIX_JS
+(function () {
+    var allTimeStart = '1970-01-01';
+    var allTimeEnd = '2099-12-31';
+    var allTimeLabel = 'All Time';
+
+    function getElement(id) {
+        return document.getElementById(id);
+    }
+
+    function isAllTimeState() {
+        var cannedDate = getElement('canned_date');
+        var dtf = getElement('dtf');
+        var dtt = getElement('dtt');
+
+        if (cannedDate && cannedDate.value === allTimeLabel) {
+            return true;
+        }
+
+        if (dtf && dtt && dtf.value === allTimeStart && dtt.value === allTimeEnd) {
+            return true;
+        }
+
+        return false;
+    }
+
+    function normalizeAllTimeDisplay() {
+        var dateFilter = getElement('dateFilter');
+        var cannedDate = getElement('canned_date');
+
+        if (!dateFilter || !isAllTimeState()) {
+            return;
+        }
+
+        dateFilter.value = allTimeLabel;
+
+        if (cannedDate) {
+            cannedDate.value = allTimeLabel;
+        }
+    }
+
+    function installAllTimeDisplayFix() {
+        var dateFilter = getElement('dateFilter');
+
+        if (!dateFilter) {
+            return;
+        }
+
+        normalizeAllTimeDisplay();
+
+        dateFilter.addEventListener('blur', function () {
+            window.setTimeout(normalizeAllTimeDisplay, 25);
+        });
+
+        dateFilter.addEventListener('change', function () {
+            window.setTimeout(normalizeAllTimeDisplay, 25);
+        });
+
+        if (window.jQuery) {
+            window.jQuery(dateFilter).on('hide.daterangepicker cancel.daterangepicker apply.daterangepicker', function () {
+                window.setTimeout(normalizeAllTimeDisplay, 25);
+            });
+        }
+
+        document.addEventListener('click', function () {
+            window.setTimeout(normalizeAllTimeDisplay, 50);
+        }, true);
+
+        window.setTimeout(normalizeAllTimeDisplay, 100);
+        window.setTimeout(normalizeAllTimeDisplay, 500);
+        window.setTimeout(normalizeAllTimeDisplay, 1200);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', installAllTimeDisplayFix);
+    } else {
+        installAllTimeDisplayFix();
+    }
+})();
+</script>
+
 <script src="../js/bulk_actions.js"></script>
 
 <?php
