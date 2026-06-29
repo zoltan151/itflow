@@ -244,7 +244,7 @@ $sql_categories_filter = mysqli_query(
                         <div class="input-group mb-3 mb-sm-0">
                             <input type="search" class="form-control" name="q" value="<?php if (isset($q)) { echo stripslashes(nullable_htmlentities($q)); } ?>" placeholder="Search Tickets">
                             <div class="input-group-append">
-                                <button class="btn btn-secondary" type="button" data-toggle="collapse" data-target="#advancedFilter"><i class="fas fa-filter"></i></button>
+                                <button class="btn btn-secondary" type="button" data-itflow-marker="ITFLOW_TICKET_FILTER_TOGGLE_DISABLED"><i class="fas fa-filter"></i></button>
                                 <button class="btn btn-primary"><i class="fa fa-search"></i></button>
                             </div>
                         </div>
@@ -363,17 +363,8 @@ $sql_categories_filter = mysqli_query(
                     </div>
                 </div>
 
-                <div
-                    class="collapse mt-3
-                        <?php
-                        if (isset($_GET['dtf']) && $_GET['dtf'] !== '1970-01-01'
-                            || (isset($_GET['status']) && is_array($_GET['status'])
-                            || (isset($_GET['assigned']) && $_GET['assigned']
-                        )))
-                            { echo "show"; }
-                        ?>"
-                    id="advancedFilter"
-                >
+                <!-- ITFLOW_TICKET_FILTERS_ALWAYS_VISIBLE -->
+                  <div class="mt-3" id="advancedFilter">
                     <div class="row">
                         <div class="col-md-3">
                             <div class="form-group">
