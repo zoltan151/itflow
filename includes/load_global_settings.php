@@ -92,6 +92,7 @@ $config_ticket_email_parse_unknown_senders = intval($row['config_ticket_email_pa
 $config_ticket_client_general_notifications = intval($row['config_ticket_client_general_notifications']);
 $config_ticket_autoclose_hours = intval($row['config_ticket_autoclose_hours']);
 $config_ticket_new_ticket_notification_email = $row['config_ticket_new_ticket_notification_email'];
+$config_ticket_attention_notification_email = $row['config_ticket_attention_notification_email'] ?? ($config_ticket_new_ticket_notification_email ?? '');
 $config_ticket_agent_notification_route_from_emails = $row['config_ticket_agent_notification_route_from_emails'] ?? '';
 $config_ticket_agent_notification_route_to_email = $row['config_ticket_agent_notification_route_to_email'] ?? '';
 $config_ticket_reply_target_status_id = intval($row['config_ticket_reply_target_status_id'] ?? 0);

@@ -310,163 +310,149 @@ if (!function_exists('ticketPostResolveReplyTargetStatusId')) {
 
 if (!function_exists('ticketPostNotifyConfiguredHelpdesk')) {
     function ticketPostNotifyConfiguredHelpdesk(int $ticket_id, string $event_label = 'Ticket Updated'): bool {
-    global $mysqli;
+        global $mysqli,
+               $config_ticket_new_ticket_notification_email,
+               $config_ticket_attention_notification_email,
+               $config_ticket_from_email,
+               $config_ticket_from_name,
+               $config_base_url,
+               $config_app_name,
+               $session_company_name;
 
-    // ITFLOW_TICKET_REROUTE_NEW_TICKET_ONLY_FIX
-    // The per-user reroute address is intended for new-ticket intake notifications only.
-    // Do not send generic status/reply/update notifications to the new-ticket reroute mailbox.
-    if (!ticketPostIsNewTicketNotificationEvent($event_label) && !ticketPostIsHelpdeskAttentionNotificationEvent($event_label)) {
-        return false;
-    }
+        // ITFLOW_ATTENTION_HELPDESK_NOTIFICATION_SETTING_FIX
+        // New-ticket and attention-required notifications are separate settings.
+        // New Ticket uses config_ticket_new_ticket_notification_email.
+        // Attention Helpdesk uses config_ticket_attention_notification_email.
+        // Other status/update events do not notify the internal queue.
+        $ticket_id = intval($ticket_id);
+        if ($ticket_id <= 0) {
+            return false;
+        }
 
-    $ticket_id = intval($ticket_id);
-    if ($ticket_id <= 0) {
-        return false;
-    }
+        $is_new_ticket_event = ticketPostIsNewTicketNotificationEvent($event_label);
+        $is_attention_event = ticketPostIsHelpdeskAttentionNotificationEvent($event_label);
 
-    $ticket_sql = mysqli_query($mysqli, "
-        SELECT
-            tickets.ticket_id,
-            tickets.ticket_prefix,
-            tickets.ticket_number,
-            tickets.ticket_subject,
-            tickets.ticket_priority,
-            tickets.ticket_status,
-            tickets.ticket_client_id,
-            clients.client_name,
-            contacts.contact_name,
-            contacts.contact_email
-        FROM tickets
-        LEFT JOIN clients ON tickets.ticket_client_id = clients.client_id
-        LEFT JOIN contacts ON tickets.ticket_contact_id = contacts.contact_id
-        WHERE tickets.ticket_id = $ticket_id
-        LIMIT 1
-    ");
+        if (!$is_new_ticket_event && !$is_attention_event) {
+            return false;
+        }
 
-    if (!$ticket_sql || mysqli_num_rows($ticket_sql) === 0) {
-        return false;
-    }
+        $recipient_string = '';
+        if ($is_new_ticket_event) {
+            $recipient_string = (string)($config_ticket_new_ticket_notification_email ?? '');
+        } elseif ($is_attention_event) {
+            $recipient_string = (string)($config_ticket_attention_notification_email ?? '');
+        }
 
-    $ticket = mysqli_fetch_assoc($ticket_sql);
-
-    $ticket_prefix = $ticket['ticket_prefix'] ?: 'TKT';
-    $ticket_number = $ticket['ticket_number'] ?: $ticket_id;
-    $ticket_ref = $ticket_prefix . '-' . $ticket_number;
-    $subject = $ticket['ticket_subject'] ?? '';
-    $client_name = $ticket['client_name'] ?? '';
-    $contact_name = $ticket['contact_name'] ?? '';
-    $contact_email = $ticket['contact_email'] ?? '';
-    $priority = $ticket['ticket_priority'] ?? '';
-    $status = $ticket['ticket_status'] ?? '';
-    $client_id = intval($ticket['ticket_client_id'] ?? 0);
-
-    $is_new_ticket_event = ticketPostIsNewTicketNotificationEvent($event_label);
-    $is_attention_event = ticketPostIsHelpdeskAttentionNotificationEvent($event_label);
-
-    if (!$is_new_ticket_event && !$is_attention_event) {
-        return false;
-    }
-
-    $recipients = [];
-
-    // Only new ticket events should use user reroute mailboxes such as
-    // notify-new-support-tickets-*. Status updates must not be routed there.
-    if ($is_new_ticket_event) {
-        $user_sql = mysqli_query($mysqli, "
-            SELECT user_email, user_config_ticket_notifications_reroute_enable, user_config_ticket_notifications_reroute_email
-            FROM users
-            WHERE user_archived_at IS NULL
-              AND user_status = 1
-              AND user_type = 1
-        ");
-
-        if ($user_sql) {
-            while ($user = mysqli_fetch_assoc($user_sql)) {
-                $email = trim((string)($user['user_email'] ?? ''));
-                if (
-                    !empty($user['user_config_ticket_notifications_reroute_enable'])
-                    && filter_var($user['user_config_ticket_notifications_reroute_email'] ?? '', FILTER_VALIDATE_EMAIL)
-                ) {
-                    $email = trim((string)$user['user_config_ticket_notifications_reroute_email']);
-                }
-
-                if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                    $recipients[strtolower($email)] = $email;
-                }
+        $recipients = [];
+        foreach (preg_split('/[,;\s]+/', $recipient_string) as $recipient) {
+            $recipient = trim($recipient);
+            if ($recipient !== '' && filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+                $recipients[strtolower($recipient)] = $recipient;
             }
         }
-    }
 
-    // Helpdesk-attention events may notify the configured global new-ticket/helpdesk mailbox,
-    // but not the per-user "new support ticket" reroute address unless the event is a true new ticket.
-    if ($is_attention_event && !$is_new_ticket_event) {
-        $settings_sql = mysqli_query($mysqli, "
-            SELECT config_ticket_new_ticket_notification_email
-            FROM settings
-            WHERE company_id = 1
+        if (empty($recipients)) {
+            return false;
+        }
+
+        $ticket_sql = mysqli_query($mysqli, "
+            SELECT
+                tickets.ticket_id,
+                tickets.ticket_prefix,
+                tickets.ticket_number,
+                tickets.ticket_subject,
+                tickets.ticket_details,
+                tickets.ticket_priority,
+                tickets.ticket_status,
+                tickets.ticket_client_id,
+                clients.client_name,
+                contacts.contact_name,
+                contacts.contact_email,
+                ticket_statuses.ticket_status_name
+            FROM tickets
+            LEFT JOIN clients ON tickets.ticket_client_id = clients.client_id
+            LEFT JOIN contacts ON tickets.ticket_contact_id = contacts.contact_id
+            LEFT JOIN ticket_statuses ON tickets.ticket_status = ticket_statuses.ticket_status_id
+            WHERE tickets.ticket_id = $ticket_id
             LIMIT 1
         ");
 
-        if ($settings_sql && mysqli_num_rows($settings_sql) > 0) {
-            $settings = mysqli_fetch_assoc($settings_sql);
-            foreach (preg_split('/[,;\s]+/', (string)($settings['config_ticket_new_ticket_notification_email'] ?? '')) as $email) {
-                $email = trim($email);
-                if (filter_var($email, FILTER_VALIDATE_EMAIL) && !str_contains($email, 'notify-new-support-tickets-')) {
-                    $recipients[strtolower($email)] = $email;
-                }
-            }
+        if (!$ticket_sql || mysqli_num_rows($ticket_sql) === 0) {
+            return false;
         }
-    }
 
-    if (empty($recipients)) {
-        return false;
-    }
+        $ticket = mysqli_fetch_assoc($ticket_sql);
 
-    $safe_ticket_ref = sanitizeInput($ticket_ref);
-    $safe_subject = sanitizeInput($subject);
-    $safe_event = sanitizeInput($event_label);
+        $ticket_prefix = sanitizeInput((string)($ticket['ticket_prefix'] ?? 'TKT'));
+        $ticket_number = sanitizeInput((string)($ticket['ticket_number'] ?? $ticket_id));
+        $ticket_ref = $ticket_prefix . $ticket_number;
+        $ticket_subject = sanitizeInput((string)($ticket['ticket_subject'] ?? ''));
+        $ticket_details = (string)($ticket['ticket_details'] ?? '');
+        $ticket_priority = sanitizeInput((string)($ticket['ticket_priority'] ?? ''));
+        $ticket_status_name = sanitizeInput((string)($ticket['ticket_status_name'] ?: getTicketStatusName($ticket['ticket_status'] ?? 0)));
+        $client_id = intval($ticket['ticket_client_id'] ?? 0);
+        $client_name = sanitizeInput((string)($ticket['client_name'] ?? 'Guest / Unassigned Client'));
+        $contact_name = sanitizeInput((string)($ticket['contact_name'] ?? 'No contact'));
+        $contact_email = sanitizeInput((string)($ticket['contact_email'] ?? 'No contact email'));
 
-    $mail_subject = "ITFlow - $safe_event - [$safe_ticket_ref] $safe_subject";
+        $base_url = sanitizeInput((string)($config_base_url ?? ($_SERVER['HTTP_HOST'] ?? '')));
+        $app_name = sanitizeInput((string)($config_app_name ?? 'ITFlow'));
+        $company_name = sanitizeInput((string)($session_company_name ?? 'ITFlow'));
+        $from_email = sanitizeInput((string)($config_ticket_from_email ?? ''));
+        $from_name = sanitizeInput((string)($config_ticket_from_name ?? $company_name));
+        $event_label_clean = sanitizeInput($event_label);
 
-    if ($is_new_ticket_event) {
-        $intro = "This is a notification that a new ticket was created.";
-    } else {
-        $intro = "This is a notification that a ticket requires helpdesk attention.";
-    }
+        $client_uri = $client_id ? "&client_id=$client_id" : '';
+        $agent_link = "https://$base_url/agent/ticket.php?ticket_id=$ticket_id$client_uri";
 
-    $ticket_url = "https://" . ($_SERVER['HTTP_HOST'] ?? 'support.infotech.net') . "/agent/ticket.php?ticket_id=" . $ticket_id . "&client_id=" . $client_id;
+        $safe_details = $ticket_details;
+        $safe_details = preg_replace('/<\s*(script|style|iframe|object|embed|form|input|button|select|textarea|link|meta|base)[^>]*>.*?<\s*\/\s*\1\s*>/is', '', $safe_details);
+        $safe_details = preg_replace('/<\s*(script|style|iframe|object|embed|form|input|button|select|textarea|link|meta|base)\b[^>]*\/?\s*>/is', '', $safe_details);
+        $safe_details = preg_replace('/\s+on[a-z]+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $safe_details);
+        if (strlen($safe_details) > 20000) {
+            $safe_details = substr($safe_details, 0, 20000) . "<br><br><i>[Ticket details truncated in notification email. Open the ticket for the full details.]</i>";
+        }
 
-    $body = "Hello,<br><br>"
-        . $intro . "<br><br>"
-        . "Event: " . sanitizeInput($event_label) . "<br>"
-        . "Client: " . sanitizeInput($client_name) . "<br>"
-        . "Contact: " . sanitizeInput($contact_name) . " &lt;" . sanitizeInput($contact_email) . "&gt;<br>"
-        . "Priority: " . sanitizeInput($priority) . "<br>"
-        . "Status: " . sanitizeInput($status) . "<br>"
-        . "Ticket: " . sanitizeInput($ticket_ref) . "<br>"
-        . "Subject: " . sanitizeInput($subject) . "<br>"
-        . "Link: <a href='" . sanitizeInput($ticket_url) . "'>" . sanitizeInput($ticket_url) . "</a><br>";
+        if ($is_new_ticket_event) {
+            $email_subject = "$app_name - New Ticket - [$ticket_ref] $ticket_subject";
+            $intro = "This is a notification that a new ticket has been raised in ITFlow.";
+        } else {
+            $email_subject = "$app_name - Attention Helpdesk - [$ticket_ref] $ticket_subject";
+            $intro = "This is a notification that a ticket requires helpdesk attention.";
+        }
 
-    $sent = false;
+        $email_body = "Hello,<br><br>"
+            . $intro . "<br><br>"
+            . "Event: $event_label_clean<br>"
+            . "Client: $client_name<br>"
+            . "Contact: $contact_name &lt;$contact_email&gt;<br>"
+            . "Priority: $ticket_priority<br>"
+            . "Status: $ticket_status_name<br>"
+            . "Ticket: $ticket_ref<br>"
+            . "Subject: $ticket_subject<br>"
+            . "Link: <a href='$agent_link'>$agent_link</a><br><br>"
+            . "--------------------------------<br><br>"
+            . $safe_details
+            . "<br><br>--<br>$company_name<br>$from_email";
 
-    foreach ($recipients as $recipient) {
-        if (function_exists('addToMailQueue')) {
+        $sent = false;
+
+        foreach ($recipients as $recipient) {
             addToMailQueue([
                 [
-                    'from' => $GLOBALS['config_ticket_from_email'] ?? '',
-                    'from_name' => $GLOBALS['config_ticket_from_name'] ?? 'InfoTech Support',
+                    'from' => $from_email,
+                    'from_name' => $from_name,
                     'recipient' => $recipient,
                     'recipient_name' => $recipient,
-                    'subject' => $mail_subject,
-                    'body' => $body,
+                    'subject' => mysqli_real_escape_string($mysqli, $email_subject),
+                    'body' => mysqli_real_escape_string($mysqli, $email_body),
                 ]
             ]);
             $sent = true;
         }
-    }
 
-    return $sent;
-}
+        return $sent;
+    }
 }
 
 

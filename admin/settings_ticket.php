@@ -352,7 +352,16 @@ require_once "includes/inc_all_admin.php";
 
                 <button type="submit" name="edit_ticket_settings" class="btn btn-primary text-bold"><i class="fas fa-check mr-2"></i>Save</button>
 
-            </form>
+            
+                        <div class="form-group">
+                            <label>Attention Helpdesk Notification Email</label>
+                            <input type="text" class="form-control" name="config_ticket_attention_notification_email" value="<?php echo htmlentities($config_ticket_attention_notification_email ?? '', ENT_QUOTES, 'UTF-8'); ?>" placeholder="helpdesk-attention@example.com">
+                            <small class="form-text text-muted">
+                                Email address(es) notified when a ticket requires internal helpdesk attention, such as when the ticket is moved to the configured Attention Helpdesk status. Separate multiple addresses with commas, semicolons, spaces, or new lines.
+                            </small>
+                        </div>
+
+</form>
         </div>
     </div>
 
