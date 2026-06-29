@@ -2037,15 +2037,54 @@ function notificationEventSuffix($type, $details = '') {
     return 'system';
 }
 
-function notificationSettingEnabled($column) {
+function notificationSettingEnabled($setting_key) {
     global $mysqli;
 
-    if (!preg_match('/^[A-Za-z0-9_]+$/', $column)) {
+    $setting_key = trim((string)$setting_key);
+
+    if ($setting_key === '') {
         return false;
     }
 
-    $row = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT `$column` AS enabled FROM settings WHERE company_id = 1 LIMIT 1"));
-    return intval($row['enabled'] ?? 0) === 1;
+    // ITFLOW_NOTIFICATION_SETTING_MISSING_COLUMN_SAFE_FALLBACK
+    // Some installations may not have every newer notification preference column yet.
+    // A missing optional notification column must not fatal cron jobs, ticket parsing,
+    // backup creation, or other workflows. Treat unknown/missing notification settings
+    // as disabled and continue.
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $setting_key)) {
+        error_log("ITFlow notification setting skipped due invalid key: " . $setting_key);
+        return false;
+    }
+
+    try {
+        $safe_setting_key = mysqli_real_escape_string($mysqli, $setting_key);
+
+        $sql_column = mysqli_query($mysqli, "
+            SELECT 1
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'settings'
+              AND COLUMN_NAME = '$safe_setting_key'
+            LIMIT 1
+        ");
+
+        if (!$sql_column || mysqli_num_rows($sql_column) === 0) {
+            error_log("ITFlow notification setting skipped due missing settings column: " . $setting_key);
+            return false;
+        }
+
+        $sql = mysqli_query($mysqli, "SELECT `$safe_setting_key` AS setting_value FROM settings LIMIT 1");
+
+        if (!$sql || mysqli_num_rows($sql) === 0) {
+            return false;
+        }
+
+        $row = mysqli_fetch_assoc($sql);
+        return !empty($row['setting_value']);
+    } catch (Throwable $e) {
+        error_log("ITFlow notification setting skipped after error for " . $setting_key . ": " . $e->getMessage());
+        return false;
+    }
 }
 
 function notificationGetSettingValue($column, $default = '') {
