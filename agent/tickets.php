@@ -486,7 +486,8 @@ $sql_categories_filter = mysqli_query(
                                 <label>Assigned to</label>
                                 <select onchange="this.form.submit()" class="form-control select2" name="assigned[]" data-placeholder="Any" multiple>
                                     <!-- ITFLOW_TICKET_ASSIGNED_PLACEHOLDER_ANY_UI -->
-                                    <option value="unassigned" <!-- ITFLOW_TICKET_FILTER_ANY_CLEAR_ACTIONS_ASSIGNED -->
+                                    <option value="unassigned" <!-- ITFLOW_TICKET_ASSIGNED_REMOVE_BLANK_OPTION -->
+                                    <!-- ITFLOW_TICKET_FILTER_ANY_CLEAR_ACTIONS_ASSIGNED -->
                                     <option value="__clear__" data-itflow-clear-filter="assigned">Any</option>
                                     <?php if (!empty($ticket_assigned_filter_values) && in_array('unassigned', $ticket_assigned_filter_values, true)) { echo "selected"; } ?>>Unassigned</option>
 
