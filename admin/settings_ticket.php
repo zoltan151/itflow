@@ -162,17 +162,21 @@ require_once "includes/inc_all_admin.php";
                         </div>
                         <input type="email" class="form-control" name="config_ticket_new_ticket_notification_email" placeholder="Address to notify for new tickets, leave blank for none" value="<?php echo nullable_htmlentities($config_ticket_new_ticket_notification_email); ?>">
                     </div>
-
-                        <div class="form-group">
-                            <label>Attention Helpdesk Notification Email</label>
-                            <input type="text" class="form-control" name="config_ticket_attention_notification_email" value="<?php echo htmlentities($config_ticket_attention_notification_email ?? '', ENT_QUOTES, 'UTF-8'); ?>" placeholder="helpdesk-attention@example.com">
-                            <small class="form-text text-muted">
-                                Email address(es) notified when a ticket requires internal helpdesk attention, such as when the ticket is moved to the configured Attention Helpdesk status. Separate multiple addresses with commas, semicolons, spaces, or new lines.
-                            </small>
-                        </div>
-
-
                 </div>
+
+                <div class="form-group">
+                    <label>Attention Helpdesk Notification Email <small class="text-secondary">(Tickets requiring internal action)</small></label>
+                    <div class="input-group">
+                        <div class="input-group-prepend">
+                            <span class="input-group-text"><i class="fa fa-fw fa-bell"></i></span>
+                        </div>
+                        <input type="text" class="form-control" name="config_ticket_attention_notification_email" value="<?php echo htmlentities($config_ticket_attention_notification_email ?? '', ENT_QUOTES, 'UTF-8'); ?>" placeholder="Address to notify for Attention Helpdesk tickets, leave blank for none">
+                    </div>
+                    <small class="form-text text-muted">
+                        Email address(es) notified when a ticket requires internal helpdesk attention, such as when the ticket is moved to the configured Attention Helpdesk status. Separate multiple addresses with commas, semicolons, spaces, or new lines.
+                    </small>
+                </div>
+
                                 <div class="card card-outline card-secondary mt-4">
                     <div class="card-header">
                         <h4 class="card-title"><i class="fa fa-fw fa-comment-dots mr-2"></i>Resolved Ticket Feedback</h4>
