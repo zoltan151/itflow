@@ -23,14 +23,18 @@ enforceUserPermission('module_support');
 // Explicit quick filters like Open, Closed, My Tickets, Unassigned, client_id, search, category, project, etc. still work.
 $ticket_list_has_explicit_scope_filter = (
     (isset($_GET['status']) && ((is_array($_GET['status']) && count(array_filter(array_map('intval', $_GET['status']))) > 0) || (!is_array($_GET['status']) && $_GET['status'] !== '')))
-    || isset($_GET['assigned'])
+    || (isset($_GET['assigned']) && count(array_filter((array)$_GET['assigned'], static function ($ticket_assigned_scope_value) {
+        return $ticket_assigned_scope_value !== '' && $ticket_assigned_scope_value !== 'any';
+    })) > 0)
     || isset($_GET['unassigned'])
     || isset($_GET['user'])
     || isset($_GET['view'])
     || isset($_GET['client_id'])
     || isset($_GET['q'])
     || isset($_GET['category'])
-    || isset($_GET['project'])
+    || (isset($_GET['project']) && count(array_filter((array)$_GET['project'], static function ($ticket_project_scope_value) {
+        return $ticket_project_scope_value !== '' && $ticket_project_scope_value !== 'any';
+    })) > 0)
     || isset($_GET['billable'])
     || isset($_GET['unbilled'])
     || isset($_GET['dtf'])
@@ -115,27 +119,85 @@ if (isset($_GET['category']) & !empty($_GET['category'])) {
     $category_filter = '';
 }
 
-// Ticket assignment status filter
-// Default - any
+// ITFLOW_TICKET_ASSIGNED_PLACEHOLDER_ANY_LOGIC
+// Ticket assignment filter. Empty multi-select / no assignee means Any.
 $ticket_assigned_query = '';
-$ticket_assigned_filter_id = '';
-if (isset($_GET['assigned']) & !empty($_GET['assigned'])) {
-    if ($_GET['assigned'] == 'unassigned') {
-        $ticket_assigned_query = 'AND ticket_assigned_to = 0';
-        $ticket_assigned_filter_id = 0;
+$ticket_assigned_filter_values = [];
+
+if (isset($_GET['assigned'])) {
+    $assigned_filter_raw_values = is_array($_GET['assigned']) ? $_GET['assigned'] : [$_GET['assigned']];
+
+    foreach ($assigned_filter_raw_values as $assigned_filter_raw_value) {
+        if ($assigned_filter_raw_value === '' || $assigned_filter_raw_value === 'any') {
+            continue;
+        }
+
+        if ($assigned_filter_raw_value === 'unassigned') {
+            $ticket_assigned_filter_values[] = 'unassigned';
+            continue;
+        }
+
+        $assigned_filter_user_id = intval($assigned_filter_raw_value);
+        if ($assigned_filter_user_id > 0) {
+            $ticket_assigned_filter_values[] = (string)$assigned_filter_user_id;
+        }
+    }
+
+    $ticket_assigned_filter_values = array_values(array_unique($ticket_assigned_filter_values));
+
+    if (!empty($ticket_assigned_filter_values)) {
+        $ticket_assigned_filter_ids = [];
+        foreach ($ticket_assigned_filter_values as $ticket_assigned_filter_value) {
+            if ($ticket_assigned_filter_value === 'unassigned') {
+                $ticket_assigned_filter_ids[] = 0;
+            } else {
+                $ticket_assigned_filter_ids[] = intval($ticket_assigned_filter_value);
+            }
+        }
+
+        $ticket_assigned_filter_ids = array_values(array_unique(array_filter($ticket_assigned_filter_ids, static function ($ticket_assigned_filter_id) {
+            return $ticket_assigned_filter_id >= 0;
+        })));
+
+        if (!empty($ticket_assigned_filter_ids)) {
+            $ticket_assigned_query = 'AND ticket_assigned_to IN (' . implode(',', $ticket_assigned_filter_ids) . ')';
+        }
     } else {
-        $ticket_assigned_query = 'AND ticket_assigned_to = ' . intval($_GET['assigned']);
-        $ticket_assigned_filter_id = intval($_GET['assigned']);
+        unset($_GET['assigned']);
     }
 }
-
-// Project filter
-// Default - any (including tickets without a project)
+// ITFLOW_TICKET_PROJECT_PLACEHOLDER_ANY_LOGIC
+// Project filter. Empty multi-select / no project means Any.
 $ticket_project_snippet = '';
-$ticket_project_filter_id = '';
-if (isset($_GET['project']) & !empty($_GET['project']) && $_GET['project'] > '0') {
-    $ticket_project_snippet = 'AND ticket_project_id = ' . intval($_GET['project']);
-    $ticket_project_filter_id = intval($_GET['project']);
+$ticket_project_filter_values = [];
+
+if (isset($_GET['project'])) {
+    $project_filter_raw_values = is_array($_GET['project']) ? $_GET['project'] : [$_GET['project']];
+
+    foreach ($project_filter_raw_values as $project_filter_raw_value) {
+        if ($project_filter_raw_value === '' || $project_filter_raw_value === 'any') {
+            continue;
+        }
+
+        $project_filter_id = intval($project_filter_raw_value);
+        if ($project_filter_id > 0) {
+            $ticket_project_filter_values[] = (string)$project_filter_id;
+        }
+    }
+
+    $ticket_project_filter_values = array_values(array_unique($ticket_project_filter_values));
+
+    if (!empty($ticket_project_filter_values)) {
+        $ticket_project_filter_ids = array_values(array_unique(array_filter(array_map('intval', $ticket_project_filter_values), static function ($ticket_project_filter_id) {
+            return $ticket_project_filter_id > 0;
+        })));
+
+        if (!empty($ticket_project_filter_ids)) {
+            $ticket_project_snippet = 'AND ticket_project_id IN (' . implode(',', $ticket_project_filter_ids) . ')';
+        }
+    } else {
+        unset($_GET['project']);
+    }
 }
 
 
@@ -147,7 +209,11 @@ if (!empty($ticket_list_audit_default)) {
     unset($_GET['status']);
     $ticket_status_filter_values = [];
     $ticket_assigned_query = '';
+    unset($_GET['assigned']);
+    $ticket_assigned_filter_values = [];
     $ticket_assigned_filter_id = '';
+    unset($_GET['project']);
+    $ticket_project_filter_values = [];
 }
 
 // Ticket client access overide - This is the only way to show tickets without a client to agents with restricted client access
@@ -416,9 +482,9 @@ $sql_categories_filter = mysqli_query(
                         <div class="col-md-3">
                             <div class="form-group">
                                 <label>Assigned to</label>
-                                <select onchange="this.form.submit()" class="form-control select2" name="assigned">
-                                    <option value="" <?php if ($ticket_assigned_filter_id == "") { echo "selected"; } ?>>Any</option>
-                                    <option value="unassigned" <?php if ($ticket_assigned_filter_id == "0") { echo "selected"; } ?>>Unassigned</option>
+                                <select onchange="this.form.submit()" class="form-control select2" name="assigned[]" data-placeholder="Any" multiple>
+                                    <!-- ITFLOW_TICKET_ASSIGNED_PLACEHOLDER_ANY_UI -->
+                                    <option value="unassigned" <?php if (!empty($ticket_assigned_filter_values) && in_array('unassigned', $ticket_assigned_filter_values, true)) { echo "selected"; } ?>>Unassigned</option>
 
                                     <?php
                                     $sql_assign_to = mysqli_query($mysqli, "SELECT * FROM users WHERE user_type = 1 AND user_archived_at IS NULL ORDER BY user_name ASC");
@@ -426,7 +492,7 @@ $sql_categories_filter = mysqli_query(
                                         $user_id = intval($row['user_id']);
                                         $user_name = nullable_htmlentities($row['user_name']);
                                         ?>
-                                        <option <?php if ($ticket_assigned_filter_id == $user_id) { echo "selected"; } ?> value="<?php echo $user_id; ?>"><?php echo $user_name; ?></option>
+                                        <option <?php if (!empty($ticket_assigned_filter_values) && in_array((string)$user_id, $ticket_assigned_filter_values, true)) { echo "selected"; } ?> value="<?php echo $user_id; ?>"><?php echo $user_name; ?></option>
                                         <?php
                                     }
                                     ?>
@@ -437,9 +503,8 @@ $sql_categories_filter = mysqli_query(
                         <div class="col-md-3">
                             <div class="form-group">
                                 <label>Project</label>
-                                <select onchange="this.form.submit()" class="form-control select2" name="project">
-                                    <option value="" <?php if ($ticket_project_filter_id == "") { echo "selected"; } ?>>Any</option>
-
+                                <select onchange="this.form.submit()" class="form-control select2" name="project[]" data-placeholder="Any" multiple>
+                                    <!-- ITFLOW_TICKET_PROJECT_PLACEHOLDER_ANY_UI -->
                                     <?php
                                     $sql_projects = mysqli_query($mysqli, "SELECT * FROM projects WHERE project_completed_at IS NULL and project_archived_at IS NULL ORDER BY project_name ASC");
                                     while ($row = mysqli_fetch_assoc($sql_projects)) {
@@ -448,7 +513,7 @@ $sql_categories_filter = mysqli_query(
                                         $project_number = intval($row['project_number']);
                                         $project_name = nullable_htmlentities($row['project_name']);
                                         ?>
-                                        <option <?php if ($ticket_project_filter_id == $project_id) { echo "selected"; } ?> value="<?php echo $project_id; ?>"><?php echo $project_prefix . $project_number . " - " . $project_name; ?></option>
+                                        <option <?php if (!empty($ticket_project_filter_values) && in_array((string)$project_id, $ticket_project_filter_values, true)) { echo "selected"; } ?> value="<?php echo $project_id; ?>"><?php echo $project_prefix . $project_number . " - " . $project_name; ?></option>
                                         <?php
                                     }
                                     ?>
