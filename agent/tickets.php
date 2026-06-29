@@ -24,7 +24,7 @@ enforceUserPermission('module_support');
 $ticket_list_has_explicit_scope_filter = (
     (isset($_GET['status']) && ((is_array($_GET['status']) && count(array_filter(array_map('intval', $_GET['status']))) > 0) || (!is_array($_GET['status']) && $_GET['status'] !== '')))
     || (isset($_GET['assigned']) && count(array_filter((array)$_GET['assigned'], static function ($ticket_assigned_scope_value) {
-        return $ticket_assigned_scope_value !== '' && $ticket_assigned_scope_value !== 'any';
+        return $ticket_assigned_scope_value !== '' && $ticket_assigned_scope_value !== 'any' && $ticket_assigned_scope_value !== '__clear__';
     })) > 0)
     || isset($_GET['unassigned'])
     || isset($_GET['user'])
@@ -33,7 +33,7 @@ $ticket_list_has_explicit_scope_filter = (
     || isset($_GET['q'])
     || isset($_GET['category'])
     || (isset($_GET['project']) && count(array_filter((array)$_GET['project'], static function ($ticket_project_scope_value) {
-        return $ticket_project_scope_value !== '' && $ticket_project_scope_value !== 'any';
+        return $ticket_project_scope_value !== '' && $ticket_project_scope_value !== 'any' && $ticket_project_scope_value !== '__clear__';
     })) > 0)
     || isset($_GET['billable'])
     || isset($_GET['unbilled'])
@@ -128,7 +128,7 @@ if (isset($_GET['assigned'])) {
     $assigned_filter_raw_values = is_array($_GET['assigned']) ? $_GET['assigned'] : [$_GET['assigned']];
 
     foreach ($assigned_filter_raw_values as $assigned_filter_raw_value) {
-        if ($assigned_filter_raw_value === '' || $assigned_filter_raw_value === 'any') {
+        if ($assigned_filter_raw_value === '' || $assigned_filter_raw_value === 'any' || $assigned_filter_raw_value === '__clear__') {
             continue;
         }
 
@@ -175,7 +175,7 @@ if (isset($_GET['project'])) {
     $project_filter_raw_values = is_array($_GET['project']) ? $_GET['project'] : [$_GET['project']];
 
     foreach ($project_filter_raw_values as $project_filter_raw_value) {
-        if ($project_filter_raw_value === '' || $project_filter_raw_value === 'any') {
+        if ($project_filter_raw_value === '' || $project_filter_raw_value === 'any' || $project_filter_raw_value === '__clear__') {
             continue;
         }
 
@@ -468,7 +468,9 @@ $sql_categories_filter = mysqli_query(
                                 <label>Ticket Status</label>
                                 <select onchange="this.form.submit()" class="form-control select2" name="status[]" data-placeholder="Any" multiple>
                                     <!-- ITFLOW_TICKET_STATUS_PLACEHOLDER_ANY_UI -->
-                                        <?php $sql_ticket_status = mysqli_query($mysqli, "SELECT * FROM ticket_statuses WHERE ticket_status_active = 1 ORDER BY ticket_status_order");
+                                        <!-- ITFLOW_TICKET_FILTER_ANY_CLEAR_ACTIONS_STATUS -->
+                                    <option value="__clear__" data-itflow-clear-filter="status">Any</option>
+                                    <?php $sql_ticket_status = mysqli_query($mysqli, "SELECT * FROM ticket_statuses WHERE ticket_status_active = 1 ORDER BY ticket_status_order");
                                         while ($row = mysqli_fetch_assoc($sql_ticket_status)) {
                                             $ticket_status_id = intval($row['ticket_status_id']);
                                             $ticket_status_name = nullable_htmlentities($row['ticket_status_name']); ?>
@@ -484,7 +486,9 @@ $sql_categories_filter = mysqli_query(
                                 <label>Assigned to</label>
                                 <select onchange="this.form.submit()" class="form-control select2" name="assigned[]" data-placeholder="Any" multiple>
                                     <!-- ITFLOW_TICKET_ASSIGNED_PLACEHOLDER_ANY_UI -->
-                                    <option value="unassigned" <?php if (!empty($ticket_assigned_filter_values) && in_array('unassigned', $ticket_assigned_filter_values, true)) { echo "selected"; } ?>>Unassigned</option>
+                                    <option value="unassigned" <!-- ITFLOW_TICKET_FILTER_ANY_CLEAR_ACTIONS_ASSIGNED -->
+                                    <option value="__clear__" data-itflow-clear-filter="assigned">Any</option>
+                                    <?php if (!empty($ticket_assigned_filter_values) && in_array('unassigned', $ticket_assigned_filter_values, true)) { echo "selected"; } ?>>Unassigned</option>
 
                                     <?php
                                     $sql_assign_to = mysqli_query($mysqli, "SELECT * FROM users WHERE user_type = 1 AND user_archived_at IS NULL ORDER BY user_name ASC");
@@ -505,6 +509,8 @@ $sql_categories_filter = mysqli_query(
                                 <label>Project</label>
                                 <select onchange="this.form.submit()" class="form-control select2" name="project[]" data-placeholder="Any" multiple>
                                     <!-- ITFLOW_TICKET_PROJECT_PLACEHOLDER_ANY_UI -->
+                                    <!-- ITFLOW_TICKET_FILTER_ANY_CLEAR_ACTIONS_PROJECT -->
+                                    <option value="__clear__" data-itflow-clear-filter="project">Any</option>
                                     <?php
                                     $sql_projects = mysqli_query($mysqli, "SELECT * FROM projects WHERE project_completed_at IS NULL and project_archived_at IS NULL ORDER BY project_name ASC");
                                     while ($row = mysqli_fetch_assoc($sql_projects)) {
@@ -548,6 +554,57 @@ if (isset($_GET["view"])) {
 
 ?>
 
+
+
+<script>
+// ITFLOW_TICKET_FILTER_ANY_CLEAR_ACTIONS_JS
+document.addEventListener('DOMContentLoaded', function () {
+    var clearValue = '__clear__';
+    var filterNames = ['status[]', 'assigned[]', 'project[]'];
+
+    function arrayFromSelected(select) {
+        return Array.prototype.map.call(select.selectedOptions, function (option) {
+            return option.value;
+        });
+    }
+
+    function clearAndSubmit(select) {
+        Array.prototype.forEach.call(select.options, function (option) {
+            option.selected = false;
+        });
+
+        if (window.jQuery && window.jQuery.fn && window.jQuery.fn.select2) {
+            window.jQuery(select).val(null).trigger('change.select2');
+        }
+
+        if (select.form) {
+            select.form.submit();
+        }
+    }
+
+    filterNames.forEach(function (name) {
+        var select = document.querySelector('select[name="' + name + '"]');
+        if (!select) {
+            return;
+        }
+
+        if (window.jQuery && window.jQuery.fn && window.jQuery.fn.select2) {
+            window.jQuery(select).on('select2:select', function (event) {
+                if (event.params && event.params.data && event.params.data.id === clearValue) {
+                    clearAndSubmit(select);
+                }
+            });
+        }
+
+        select.addEventListener('change', function () {
+            var values = arrayFromSelected(select);
+            if (values.indexOf(clearValue) !== -1) {
+                clearAndSubmit(select);
+            }
+        });
+    });
+});
+</script>
 
 <script src="../js/bulk_actions.js"></script>
 
