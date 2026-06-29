@@ -22,7 +22,7 @@ enforceUserPermission('module_support');
 // A direct visit to Tickets should be an audit/review view: all statuses, all assignees.
 // Explicit quick filters like Open, Closed, My Tickets, Unassigned, client_id, search, category, project, etc. still work.
 $ticket_list_has_explicit_scope_filter = (
-    (isset($_GET['status']) && (!is_array($_GET['status']) || count(array_filter(array_map('intval', $_GET['status']))) > 0))
+    (isset($_GET['status']) && ((is_array($_GET['status']) && !in_array('any', $_GET['status'], true) && count(array_filter(array_map('intval', $_GET['status']))) > 0) || (!is_array($_GET['status']) && $_GET['status'] !== '' && $_GET['status'] !== 'any')))
     || isset($_GET['assigned'])
     || isset($_GET['unassigned'])
     || isset($_GET['user'])
@@ -48,51 +48,61 @@ if (isset($_GET['all_tickets'])) {
 
 
 
-// ITFLOW_TICKET_STATUS_FILTER_ANY_LOGIC
-// Ticket status from GET. Blank / Any means all statuses.
-if (isset($_GET['status']) && is_array($_GET['status'])) {
-    $_GET['status'] = array_values(array_filter(array_map('intval', $_GET['status']), static function ($ticket_status_filter_value) {
-        return $ticket_status_filter_value > 0;
-    }));
+// ITFLOW_TICKET_STATUS_ANY_EXCLUSIVE_LOGIC
+// Ticket status from GET. Any means all statuses; real statuses remain multi-selectable.
+$ticket_status_filter_values = [];
 
-    if (empty($_GET['status'])) {
-        unset($_GET['status']);
-    }
-}
-
-if (isset($_GET['status']) && is_array($_GET['status']) && !empty($_GET['status'])) {
-    // Sanitize each element of the status array
-    $sanitizedStatuses = array();
-    foreach ($_GET['status'] as $status) {
-        $status = intval($status);
-        if ($status > 0) {
-            $sanitizedStatuses[] = "'" . $status . "'";
+if (isset($_GET['status']) && !is_array($_GET['status'])) {
+    if ($_GET['status'] === 'Open') {
+        $status = 'Open';
+        $ticket_status_snippet = "ticket_resolved_at IS NULL";
+    } elseif ($_GET['status'] === 'Closed') {
+        $status = 'Closed';
+        $ticket_status_snippet = "ticket_resolved_at IS NOT NULL";
+    } else {
+        $status_value = intval($_GET['status']);
+        if ($status_value > 0) {
+            $ticket_status_filter_values = [$status_value];
+            $ticket_status_snippet = "ticket_status = $status_value";
+        } else {
+            $status = 'All';
+            $ticket_status_snippet = "1=1";
+            $_GET['status'] = ['any'];
         }
     }
 
-    if (!empty($sanitizedStatuses)) {
-        // Convert the sanitized statuses into a comma-separated string
-        $sanitizedStatusesString = implode(",", $sanitizedStatuses);
-        $ticket_status_snippet = "ticket_status IN ($sanitizedStatusesString)";
-    } else {
+} elseif (isset($_GET['status']) && is_array($_GET['status'])) {
+    if (in_array('any', $_GET['status'], true)) {
+        $_GET['status'] = ['any'];
         $status = 'All';
         $ticket_status_snippet = "1=1";
+    } else {
+        $ticket_status_filter_values = array_values(array_unique(array_filter(array_map('intval', $_GET['status']), static function ($ticket_status_filter_value) {
+            return $ticket_status_filter_value > 0;
+        })));
+
+        if (!empty($ticket_status_filter_values)) {
+            $sanitizedStatuses = array_map(static function ($ticket_status_filter_value) {
+                return "'" . intval($ticket_status_filter_value) . "'";
+            }, $ticket_status_filter_values);
+
+            $sanitizedStatusesString = implode(",", $sanitizedStatuses);
+            $ticket_status_snippet = "ticket_status IN ($sanitizedStatusesString)";
+            $_GET['status'] = $ticket_status_filter_values;
+        } else {
+            $_GET['status'] = ['any'];
+            $status = 'All';
+            $ticket_status_snippet = "1=1";
+        }
     }
 
 } else {
-    // Explicit quick filters still work.
-    if (isset($_GET['status']) && $_GET['status'] == 'Closed') {
-        $status = 'Closed';
-        $ticket_status_snippet = "ticket_resolved_at IS NOT NULL";
-    } elseif (isset($_GET['status']) && $_GET['status'] == 'Open') {
-        $status = 'Open';
-        $ticket_status_snippet = "ticket_resolved_at IS NULL";
-    } else {
-        // Default / Any - Show all tickets regardless of status.
-        $status = 'All';
-        $ticket_status_snippet = "1=1";
-    }
+    // Default / Any - Show all tickets regardless of status.
+    $_GET['status'] = ['any'];
+    $status = 'All';
+    $ticket_status_snippet = "1=1";
 }
+
 
 if (isset($_GET['billable']) && ($_GET['billable']) == '1') {
     if (isset($_GET['unbilled'])) {
@@ -144,6 +154,7 @@ if (!empty($ticket_list_audit_default)) {
     // Neutral audit view: do not restrict by status/resolved state or assignee.
     $status = 'All';
     $ticket_status_snippet = '1=1';
+    $_GET['status'] = ['any'];
     $ticket_assigned_query = '';
     $ticket_assigned_filter_id = '';
 }
@@ -399,16 +410,15 @@ $sql_categories_filter = mysqli_query(
                             <div class="form-group">
                                 <label>Ticket Status</label>
                                 <select onchange="this.form.submit()" class="form-control select2" name="status[]" data-placeholder="Select Status" multiple>
-                                    <!-- ITFLOW_TICKET_STATUS_FILTER_ANY_OPTION -->
-                                    <!-- ITFLOW_TICKET_STATUS_FILTER_ANY_VISIBLE_VALUE -->
-                                    <option value="any" <?php if (!isset($_GET['status']) || !is_array($_GET['status']) || empty(array_filter(array_map('intval', $_GET['status'])))) { echo "selected"; } ?>>Any</option>
+                                    <!-- ITFLOW_TICKET_STATUS_ANY_EXCLUSIVE_OPTION -->
+                                    <option value="any" <?php if (!isset($_GET['status']) || !is_array($_GET['status']) || in_array('any', $_GET['status'], true) || empty(array_filter(array_map('intval', $_GET['status'])))) { echo "selected"; } ?>>Any</option>
 
                                         <?php $sql_ticket_status = mysqli_query($mysqli, "SELECT * FROM ticket_statuses WHERE ticket_status_active = 1 ORDER BY ticket_status_order");
                                         while ($row = mysqli_fetch_assoc($sql_ticket_status)) {
                                             $ticket_status_id = intval($row['ticket_status_id']);
                                             $ticket_status_name = nullable_htmlentities($row['ticket_status_name']); ?>
 
-                                            <option value="<?php echo $ticket_status_id ?>" <?php if (isset($_GET['status']) && is_array($_GET['status']) && in_array($ticket_status_id, $_GET['status'])) { echo 'selected'; } ?>> <?php echo $ticket_status_name ?> </option>
+                                            <option value="<?php echo $ticket_status_id ?>" <?php if (isset($_GET['status']) && is_array($_GET['status']) && in_array($ticket_status_id, array_map('intval', $_GET['status']))) { echo 'selected'; } ?>> <?php echo $ticket_status_name ?> </option>
 
                                         <?php } ?>
                                 </select>
@@ -483,6 +493,56 @@ if (isset($_GET["view"])) {
 }
 
 ?>
+
+
+<script>
+// ITFLOW_TICKET_STATUS_ANY_EXCLUSIVE_JS
+document.addEventListener('DOMContentLoaded', function () {
+    var statusSelect = document.querySelector('select[name="status[]"]');
+    if (!statusSelect) {
+        return;
+    }
+
+    var previousValues = Array.prototype.map.call(statusSelect.selectedOptions, function (option) {
+        return option.value;
+    });
+
+    function getValues() {
+        return Array.prototype.map.call(statusSelect.selectedOptions, function (option) {
+            return option.value;
+        });
+    }
+
+    function setValues(values) {
+        Array.prototype.forEach.call(statusSelect.options, function (option) {
+            option.selected = values.indexOf(option.value) !== -1;
+        });
+
+        if (window.jQuery && window.jQuery.fn && window.jQuery.fn.select2) {
+            window.jQuery(statusSelect).trigger('change.select2');
+        }
+    }
+
+    statusSelect.addEventListener('change', function () {
+        var values = getValues();
+        var hadAny = previousValues.indexOf('any') !== -1;
+        var hasAny = values.indexOf('any') !== -1;
+        var realValues = values.filter(function (value) {
+            return value !== 'any';
+        });
+
+        if (hasAny && (!hadAny || realValues.length === 0)) {
+            setValues(['any']);
+        } else if (hasAny && realValues.length > 0) {
+            setValues(realValues);
+        } else if (realValues.length === 0) {
+            setValues(['any']);
+        }
+
+        previousValues = getValues();
+    });
+});
+</script>
 
 <script src="../js/bulk_actions.js"></script>
 
