@@ -64,6 +64,40 @@ if ($total_found_rows > 5) {
                 <?php
 
                 if ($total_pages <= 100) {
+// ITFLOW_FILTER_FOOTER_SAFE_PAGINATION_GUARD
+// Defensive pagination defaults. Some filtered/list pages can reach this shared footer
+// without initializing every pagination variable, or with zero values. Avoid warnings and
+// DivisionByZeroError while preserving normal pagination behavior when values are valid.
+if (!isset($record_count)) {
+    $record_count = 0;
+}
+if (!isset($num_rows)) {
+    $num_rows = $record_count;
+}
+if (!isset($row_count)) {
+    $row_count = $num_rows;
+}
+if (!isset($page) || (int)$page < 1) {
+    $page = 1;
+}
+if (!isset($page_limit) || (int)$page_limit < 1) {
+    $page_limit = 25;
+}
+if (!isset($num_pages) || (int)$num_pages < 1) {
+    $base_count = 0;
+    if (isset($record_count) && (int)$record_count > 0) {
+        $base_count = (int)$record_count;
+    } elseif (isset($num_rows) && (int)$num_rows > 0) {
+        $base_count = (int)$num_rows;
+    } elseif (isset($row_count) && (int)$row_count > 0) {
+        $base_count = (int)$row_count;
+    }
+    $num_pages = max(1, (int)ceil($base_count / max(1, (int)$page_limit)));
+}
+if (!isset($pages_split) || (int)$pages_split < 1) {
+    $pages_split = 1;
+}
+
                     $pages_split = 10;
                 }
                 if (($total_pages <= 1000) && ($total_pages > 100)) {
@@ -95,7 +129,7 @@ if ($total_found_rows > 5) {
 
                 while ($i < $total_pages) {
                     $i++;
-                    if (($i == 1) || (($page <= 3) && ($i <= 6)) || (($i >  $total_pages - 6) && ($page > $total_pages - 3)) || (is_int($i / $pages_split)) || (($page > 3) && ($i >= $page - 2) && ($i <= $page + 3)) || ($i == $total_pages)) {
+                    if (($i == 1) || (($page <= 3) && ($i <= 6)) || (($i >  $total_pages - 6) && ($page > $total_pages - 3)) || (is_int($i / max(1, (int)$pages_split))) || (($page > 3) && ($i >= $page - 2) && ($i <= $page + 3)) || ($i == $total_pages)) {
                         if ($page == $i) {
                             $page_class = "active";
                         } else {
