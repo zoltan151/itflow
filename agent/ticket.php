@@ -719,6 +719,28 @@ if (isset($_GET['ticket_id'])) {
                     $timeline_weight = 30;
                     if (stripos($history_description, 'changed status') !== false) {
                         $timeline_weight = 25;
+
+                        // ITFLOW_INLINE_TICKET_TIMELINE_DEDUPE_STATUS_LOGS
+                        // If a real ticket_history status-change row exists at this timestamp,
+                        // suppress the generic app-log action for the same transition.
+                        $history_status_lc = strtolower(trim($history_status));
+                        $history_description_lc = strtolower(trim($history_description));
+                        $history_dedupe_actions = [];
+
+                        if ($history_status_lc === 'resolved') {
+                            $history_dedupe_actions = ['resolve', 'resolved'];
+                        } elseif ($history_status_lc === 'closed') {
+                            $history_dedupe_actions = ['close', 'closed'];
+                        } elseif (
+                            $history_status_lc === 'open'
+                            && str_contains($history_description_lc, 'from resolved to open')
+                        ) {
+                            $history_dedupe_actions = ['reopen', 'reopened'];
+                        }
+
+                        foreach ($history_dedupe_actions as $history_dedupe_action) {
+                            $ticket_timeline_seen["status-action:$history_dedupe_action:$history_time"] = true;
+                        }
                     }
 
                     $ticketTimelineAdd([
@@ -763,7 +785,7 @@ if (isset($_GET['ticket_id'])) {
                     // keep the richer history row and skip the matching log. For pre-feature logs, show the log.
                     $dedupe_key = '';
                     $log_action_lc = strtolower($log_action);
-                    if (in_array($log_action_lc, ['reopen', 'reopened', 'close', 'closed'], true)) {
+                    if (in_array($log_action_lc, ['resolve', 'resolved', 'reopen', 'reopened', 'close', 'closed'], true)) {
                         $dedupe_key = "status-action:" . $log_action_lc . ":" . $log_created_at;
                     }
 
