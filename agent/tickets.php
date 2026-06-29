@@ -295,6 +295,16 @@ $sql_categories_filter = mysqli_query(
 select.itflow-ticket-filter-select {
     visibility: hidden;
 }
+
+/* ITFLOW_TICKET_DATE_FILTER_ANTI_FLASH */
+/* Hide the raw Date Range input during first paint, then reveal it after date picker initialization. */
+#dateFilter.itflow-ticket-date-filter-anti-flash {
+    visibility: hidden;
+}
+
+#dateFilter.itflow-ticket-date-filter-ready {
+    visibility: visible;
+}
 </style>
 
 
@@ -467,7 +477,7 @@ select.itflow-ticket-filter-select {
                         <div class="col-md-3">
                             <div class="form-group">
                                 <label>Date range</label>
-                                <input type="text" id="dateFilter" class="form-control" autocomplete="off">
+                                <input type="text" id="dateFilter" class="form-control itflow-ticket-date-filter-anti-flash" autocomplete="off" data-itflow-marker="ITFLOW_TICKET_DATE_FILTER_ANTI_FLASH_INPUT">
                                 <input type="hidden" name="canned_date" id="canned_date" value="<?php echo nullable_htmlentities($_GET['canned_date']) ?? ''; ?>">
                                 <input type="hidden" name="dtf" id="dtf" value="<?php echo nullable_htmlentities($dtf ?? ''); ?>">
                                 <input type="hidden" name="dtt" id="dtt" value="<?php echo nullable_htmlentities($dtt ?? ''); ?>">
@@ -642,6 +652,33 @@ if (window.jQuery && window.jQuery.fn && window.jQuery.fn.select2) {
         });
     });
 });
+</script>
+
+
+<script>
+// ITFLOW_TICKET_DATE_FILTER_REVEAL_JS
+(function () {
+    function revealTicketDateFilter() {
+        var dateFilter = document.getElementById('dateFilter');
+        if (!dateFilter) {
+            return;
+        }
+
+        dateFilter.classList.remove('itflow-ticket-date-filter-anti-flash');
+        dateFilter.classList.add('itflow-ticket-date-filter-ready');
+    }
+
+    if (document.readyState === 'complete') {
+        window.setTimeout(revealTicketDateFilter, 50);
+    } else {
+        window.addEventListener('load', function () {
+            window.setTimeout(revealTicketDateFilter, 50);
+        });
+    }
+
+    // Safety fallback in case a browser suppresses or delays the load event.
+    window.setTimeout(revealTicketDateFilter, 1200);
+})();
 </script>
 
 <script src="../js/bulk_actions.js"></script>
