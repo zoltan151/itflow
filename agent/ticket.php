@@ -572,9 +572,76 @@ if (isset($_GET['ticket_id'])) {
 
                 <!-- ITFLOW_TICKET_CONVERSATION_ACTIVITY_DIVIDER -->
                 <?php
-                $ticket_activity_event_count_display = intval($ticket_events_count ?? 0);
-                $ticket_reply_count_display = intval($ticket_all_comments_count ?? 0);
+                // ITFLOW_TICKET_CONVERSATION_ACTIVITY_VISIBLE_COUNTS
+                // These counts reflect the rendered timeline after log/status dedupe, not raw table counts.
+                $ticket_visible_reply_count_display = 0;
+                $ticket_visible_activity_event_count_display = 0;
+                $ticket_visible_activity_seen = [];
                 $ticket_total_time_display = '';
+
+                if (isset($sql_ticket_replies) && $sql_ticket_replies instanceof mysqli_result) {
+                    $ticket_visible_reply_count_display = mysqli_num_rows($sql_ticket_replies);
+                }
+
+                $sql_ticket_visible_history_count = mysqli_query(
+                    $mysqli,
+                    "SELECT ticket_history_id, ticket_history_status, ticket_history_description, ticket_history_created_at
+                    FROM ticket_history
+                    WHERE ticket_history_ticket_id = $ticket_id
+                    ORDER BY ticket_history_created_at DESC, ticket_history_id DESC"
+                );
+
+                while ($ticket_visible_history_row = mysqli_fetch_assoc($sql_ticket_visible_history_count)) {
+                    $ticket_visible_activity_event_count_display++;
+
+                    $history_status_lc = strtolower(trim((string)($ticket_visible_history_row['ticket_history_status'] ?? '')));
+                    $history_description_lc = strtolower(trim((string)($ticket_visible_history_row['ticket_history_description'] ?? '')));
+                    $history_time = (string)($ticket_visible_history_row['ticket_history_created_at'] ?? '');
+                    $history_dedupe_actions = [];
+
+                    if (str_contains($history_description_lc, 'changed status')) {
+                        if ($history_status_lc === 'resolved') {
+                            $history_dedupe_actions = ['resolve', 'resolved'];
+                        } elseif ($history_status_lc === 'closed') {
+                            $history_dedupe_actions = ['close', 'closed'];
+                        } elseif (
+                            $history_status_lc === 'open'
+                            && str_contains($history_description_lc, 'from resolved to open')
+                        ) {
+                            $history_dedupe_actions = ['reopen', 'reopened'];
+                        }
+                    }
+
+                    foreach ($history_dedupe_actions as $history_dedupe_action) {
+                        $ticket_visible_activity_seen["status-action:$history_dedupe_action:$history_time"] = true;
+                    }
+                }
+
+                $sql_ticket_visible_log_count = mysqli_query(
+                    $mysqli,
+                    "SELECT log_id, log_action, log_created_at
+                    FROM logs
+                    WHERE log_type = 'Ticket'
+                    AND log_entity_id = $ticket_id
+                    AND log_action IN ('Create', 'Resolved', 'Resolve', 'Closed', 'Close', 'Reopen', 'Reopened', 'Merged')
+                    ORDER BY log_created_at DESC, log_id DESC"
+                );
+
+                while ($ticket_visible_log_row = mysqli_fetch_assoc($sql_ticket_visible_log_count)) {
+                    $log_action_lc = strtolower((string)($ticket_visible_log_row['log_action'] ?? ''));
+                    $log_created_at = (string)($ticket_visible_log_row['log_created_at'] ?? '');
+                    $dedupe_key = '';
+
+                    if (in_array($log_action_lc, ['resolve', 'resolved', 'reopen', 'reopened', 'close', 'closed'], true)) {
+                        $dedupe_key = "status-action:$log_action_lc:$log_created_at";
+                    }
+
+                    if ($dedupe_key !== '' && isset($ticket_visible_activity_seen[$dedupe_key])) {
+                        continue;
+                    }
+
+                    $ticket_visible_activity_event_count_display++;
+                }
 
                 if (!empty($ticket_total_reply_time) && $ticket_total_reply_time !== '00:00:00') {
                     $ticket_total_time_display = formatDuration($ticket_total_reply_time);
@@ -594,10 +661,10 @@ if (isset($_GET['ticket_id'])) {
                             </div>
                             <div class="text-nowrap mt-1">
                                 <span class="badge badge-light border mr-1">
-                                    <i class="fas fa-fw fa-comment mr-1 text-secondary"></i><?php echo $ticket_reply_count_display; ?> replies
+                                    <i class="fas fa-fw fa-comment mr-1 text-secondary"></i><?php echo $ticket_visible_reply_count_display; ?> replies
                                 </span>
                                 <span class="badge badge-light border mr-1">
-                                    <i class="fas fa-fw fa-history mr-1 text-secondary"></i><?php echo $ticket_activity_event_count_display; ?> events
+                                    <i class="fas fa-fw fa-history mr-1 text-secondary"></i><?php echo $ticket_visible_activity_event_count_display; ?> events
                                 </span>
                                 <?php if (!empty($ticket_total_time_display)) { ?>
                                     <span class="badge badge-light border">
