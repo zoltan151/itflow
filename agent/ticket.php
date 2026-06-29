@@ -809,9 +809,37 @@ if (isset($_GET['ticket_id'])) {
                 foreach ($ticket_timeline_items as $row) {
                     // ITFLOW_INLINE_TICKET_TIMELINE_EVENT_RENDER
                     if (($row['_timeline_type'] ?? '') !== 'reply') {
-                        $timeline_status = nullable_htmlentities($row['_timeline_status'] ?? '');
-                        $timeline_description = nullable_htmlentities($row['_timeline_description'] ?? '');
-                        $timeline_actor = nullable_htmlentities($row['_timeline_actor'] ?? '');
+                        // ITFLOW_INLINE_TICKET_TIMELINE_FRIENDLY_EVENT_TEXT
+                        $timeline_type_raw = (string)($row['_timeline_type'] ?? '');
+                        $timeline_status_raw = (string)($row['_timeline_status'] ?? '');
+                        $timeline_description_raw = (string)($row['_timeline_description'] ?? '');
+                        $timeline_actor_raw = (string)($row['_timeline_actor'] ?? '');
+                        $timeline_status_lc = strtolower($timeline_status_raw);
+                        $timeline_actor_for_sentence = trim($timeline_actor_raw) !== '' ? trim($timeline_actor_raw) : 'System';
+
+                        if ($timeline_type_raw === 'log') {
+                            if (in_array($timeline_status_lc, ['resolve', 'resolved'], true)) {
+                                $timeline_description_raw = "$timeline_actor_for_sentence marked this ticket resolved";
+                                $timeline_actor_raw = '';
+                            } elseif (in_array($timeline_status_lc, ['reopen', 'reopened'], true)) {
+                                $timeline_description_raw = "$timeline_actor_for_sentence reopened this ticket";
+                                $timeline_actor_raw = '';
+                            } elseif (in_array($timeline_status_lc, ['close', 'closed'], true)) {
+                                $timeline_description_raw = "$timeline_actor_for_sentence closed this ticket";
+                                $timeline_actor_raw = '';
+                            } elseif ($timeline_status_lc === 'create') {
+                                if ($timeline_actor_for_sentence === 'Email Parser') {
+                                    $timeline_description_raw = 'Email Parser created this ticket from an inbound email';
+                                } else {
+                                    $timeline_description_raw = "$timeline_actor_for_sentence created this ticket";
+                                }
+                                $timeline_actor_raw = '';
+                            }
+                        }
+
+                        $timeline_status = nullable_htmlentities($timeline_status_raw);
+                        $timeline_description = nullable_htmlentities($timeline_description_raw);
+                        $timeline_actor = nullable_htmlentities($timeline_actor_raw);
                         $timeline_created_at = nullable_htmlentities($row['_timeline_time'] ?? '');
                         $timeline_created_at_ago = timeAgo($row['_timeline_time'] ?? '');
 
