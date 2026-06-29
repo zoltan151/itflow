@@ -295,7 +295,7 @@
                     <?php if ($config_module_enable_ticketing == 1) { ?>
                         <li class="nav-header mt-3">SUPPORT</li>
                         <li class="nav-item">
-                            <a href="/agent/tickets.php" class="nav-link <?php if (basename($_SERVER["PHP_SELF"]) == "tickets.php" || basename($_SERVER["PHP_SELF"]) == "ticket.php") { echo "active"; } ?>">
+                            <a href="/agent/tickets.php?all_tickets=1" data-itflow-marker="ITFLOW_TICKET_NAV_ALL_TICKETS_DEFAULT" class="nav-link <?php if (basename($_SERVER["PHP_SELF"]) == "tickets.php" || basename($_SERVER["PHP_SELF"]) == "ticket.php") { echo "active"; } ?>">
                                 <i class="nav-icon fas fa-life-ring"></i>
                                 <p>
                                     Tickets

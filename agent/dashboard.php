@@ -725,7 +725,7 @@ if ($user_config_dashboard_technical_enable == 1) {
         <!-- ./col -->
 
         <div class="col-lg-4 col-6">
-            <a class="small-box bg-danger" href="tickets.php">
+            <a class="small-box bg-danger" href="tickets.php?status=Open" data-itflow-marker="ITFLOW_DASHBOARD_ACTIVE_TICKETS_EXPLICIT_OPEN">
                 <div class="inner">
                     <h3><?php echo $active_tickets; ?></h3>
                     <p>Active Tickets <small>&nbsp;</small></p>

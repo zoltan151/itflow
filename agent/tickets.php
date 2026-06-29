@@ -18,6 +18,36 @@ if (isset($_GET['client_id'])) {
 // Perms
 enforceUserPermission('module_support');
 
+// ITFLOW_TICKET_LIST_AUDIT_DEFAULTS
+// A direct visit to Tickets should be an audit/review view: all statuses, all assignees.
+// Explicit quick filters like Open, Closed, My Tickets, Unassigned, client_id, search, category, project, etc. still work.
+$ticket_list_has_explicit_scope_filter = (
+    isset($_GET['status'])
+    || isset($_GET['assigned'])
+    || isset($_GET['unassigned'])
+    || isset($_GET['user'])
+    || isset($_GET['view'])
+    || isset($_GET['client_id'])
+    || isset($_GET['q'])
+    || isset($_GET['category'])
+    || isset($_GET['project'])
+    || isset($_GET['billable'])
+    || isset($_GET['unbilled'])
+    || isset($_GET['dtf'])
+    || isset($_GET['dtt'])
+);
+
+$ticket_list_audit_default = isset($_GET['all_tickets']) || !$ticket_list_has_explicit_scope_filter;
+
+// Always show the full filter row so ticket review/auditing is not hidden behind the funnel button.
+$_GET['filter'] = 1;
+
+if (isset($_GET['all_tickets'])) {
+    unset($_GET['assigned'], $_GET['unassigned'], $_GET['user']);
+}
+
+
+
 // Ticket status from GET
 if (isset($_GET['status']) && is_array($_GET['status']) && !empty($_GET['status'])) {
     // Sanitize each element of the status array
@@ -86,6 +116,16 @@ $ticket_project_filter_id = '';
 if (isset($_GET['project']) & !empty($_GET['project']) && $_GET['project'] > '0') {
     $ticket_project_snippet = 'AND ticket_project_id = ' . intval($_GET['project']);
     $ticket_project_filter_id = intval($_GET['project']);
+}
+
+
+// ITFLOW_TICKET_LIST_AUDIT_DEFAULTS_QUERY_OVERRIDE
+if (!empty($ticket_list_audit_default)) {
+    // Neutral audit view: do not restrict by status/resolved state or assignee.
+    $status = 'All';
+    $ticket_status_snippet = '1=1';
+    $ticket_assigned_query = '';
+    $ticket_assigned_filter_id = '';
 }
 
 // Ticket client access overide - This is the only way to show tickets without a client to agents with restricted client access
