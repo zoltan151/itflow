@@ -3,6 +3,61 @@
 // ITFLOW_TICKET_POST_HELPER_COMPAT_FIX - helper functions required by reply/status submit and assignment notifications.
 // ITFLOW_TICKET_REROUTE_NEW_TICKET_ONLY_FIX
 
+// ITFLOW_INTERNAL_STATUS_NOTIFY_ATTENTION_ONLY_FIX
+
+if (!function_exists('ticketPostStatusRequiresInternalAttentionNotification')) {
+    function ticketPostStatusRequiresInternalAttentionNotification(int $status_id, string $status_name = ''): bool {
+        global $config_ticket_reply_target_status_id;
+
+        $status_id = intval($status_id);
+        $configured_attention_status_id = intval($config_ticket_reply_target_status_id ?? 0);
+        $status_name_lc = strtolower(trim($status_name));
+
+        if ($status_id <= 0) {
+            return false;
+        }
+
+        // Primary rule: only the configured internal-attention status should notify helpdesk.
+        // This is the status used when an inbound customer reply means the ticket needs us.
+        if ($configured_attention_status_id > 0) {
+            return $status_id === $configured_attention_status_id;
+        }
+
+        // Fallback if the setting is missing: allow only obvious helpdesk-action wording.
+        if ($status_name_lc === '') {
+            return false;
+        }
+
+        // Explicitly suppress statuses that mean we are waiting on someone else or the ticket is done.
+        if (
+            str_contains($status_name_lc, 'client')
+            || str_contains($status_name_lc, 'customer')
+            || str_contains($status_name_lc, 'closed')
+            || str_contains($status_name_lc, 'resolved')
+            || str_contains($status_name_lc, 'complete')
+            || str_contains($status_name_lc, 'done')
+            || str_contains($status_name_lc, 'vendor')
+            || str_contains($status_name_lc, 'third party')
+            || str_contains($status_name_lc, 'waiting on')
+            || str_contains($status_name_lc, 'awaiting client')
+            || str_contains($status_name_lc, 'awaiting customer')
+        ) {
+            return false;
+        }
+
+        return (
+            str_contains($status_name_lc, 'helpdesk')
+            || str_contains($status_name_lc, 'internal')
+            || str_contains($status_name_lc, 'attention')
+            || str_contains($status_name_lc, 'needs us')
+            || str_contains($status_name_lc, 'awaiting support')
+            || str_contains($status_name_lc, 'awaiting technician')
+            || str_contains($status_name_lc, 'awaiting tech')
+        );
+    }
+}
+
+
 if (!function_exists('ticketPostIsNewTicketNotificationEvent')) {
     function ticketPostIsNewTicketNotificationEvent(string $event_label = ''): bool {
         $event_label = strtolower(trim($event_label));
@@ -2520,7 +2575,10 @@ if (isset($_POST['add_ticket_reply'])) {
     mysqli_query($mysqli, "UPDATE tickets SET ticket_status = $ticket_status, ticket_updated_at = NOW() WHERE ticket_id = $ticket_id");
 
     if ($reply_target_status_id > 0 && $ticket_status === $reply_target_status_id && $original_ticket_status !== $reply_target_status_id) {
-        ticketPostNotifyConfiguredHelpdesk($ticket_id, getTicketStatusName($reply_target_status_id));
+        $reply_target_status_name_for_notify = getTicketStatusName($reply_target_status_id);
+        if (ticketPostStatusRequiresInternalAttentionNotification($reply_target_status_id, $reply_target_status_name_for_notify)) {
+            ticketPostNotifyConfiguredHelpdesk($ticket_id, 'Attention Helpdesk');
+        }
     }
 
     // Resolve the ticket, if set
