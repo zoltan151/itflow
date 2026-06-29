@@ -576,6 +576,7 @@ if (isset($_GET['ticket_id'])) {
                 // These counts reflect the rendered timeline after log/status dedupe, not raw table counts.
                 $ticket_visible_reply_count_display = 0;
                 $ticket_visible_activity_event_count_display = 0;
+                $ticket_visible_timeline_item_count_display = 0;
                 $ticket_visible_activity_seen = [];
                 $ticket_total_time_display = '';
 
@@ -643,6 +644,8 @@ if (isset($_GET['ticket_id'])) {
                     $ticket_visible_activity_event_count_display++;
                 }
 
+                $ticket_visible_timeline_item_count_display = $ticket_visible_reply_count_display + $ticket_visible_activity_event_count_display;
+
                 if (!empty($ticket_total_reply_time) && $ticket_total_reply_time !== '00:00:00') {
                     $ticket_total_time_display = formatDuration($ticket_total_reply_time);
                 }
@@ -660,6 +663,9 @@ if (isset($_GET['ticket_id'])) {
                                 </div>
                             </div>
                             <div class="text-nowrap mt-1">
+                                <span class="badge badge-light border mr-1">
+                                    <i class="fas fa-fw fa-list mr-1 text-secondary"></i><?php echo $ticket_visible_timeline_item_count_display; ?> items
+                                </span>
                                 <span class="badge badge-light border mr-1">
                                     <i class="fas fa-fw fa-comment mr-1 text-secondary"></i><?php echo $ticket_visible_reply_count_display; ?> replies
                                 </span>
