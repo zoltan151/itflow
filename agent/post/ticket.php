@@ -2154,7 +2154,6 @@ if (isset($_POST['bulk_resolve_tickets'])) {
                 // Update ticket & insert reply
                 mysqli_query($mysqli, "UPDATE tickets SET ticket_status = 4, ticket_resolved_at = NOW() WHERE ticket_id = $ticket_id");
 
-    ticketPostAddStatusChangeHistory($ticket_id, $original_ticket_status_id, 4, $session_name);
 
                 mysqli_query($mysqli, "INSERT INTO ticket_replies SET ticket_reply = '$details', ticket_reply_type = '$ticket_reply_type', ticket_reply_time_worked = '$ticket_reply_time_worked', ticket_reply_by = $session_user_id, ticket_reply_ticket_id = $ticket_id");
 
@@ -2960,13 +2959,13 @@ if (isset($_GET['resolve_ticket'])) {
     enforceUserPermission('module_support', 2);
 
     $ticket_id = intval($_GET['resolve_ticket']);
+    $original_ticket_status_id = ticketPostGetCurrentStatusId($ticket_id);
 
     $sql = mysqli_query($mysqli, "SELECT * FROM tickets WHERE ticket_id = $ticket_id");
     $row = mysqli_fetch_assoc($sql);
     $ticket_prefix = sanitizeInput($row['ticket_prefix']);
     $ticket_number = intval($row['ticket_number']);
     $ticket_first_response_at = sanitizeInput($row['ticket_first_response_at']);
-    $original_ticket_status_id = intval($row['ticket_status']);
     $client_id = intval($row['ticket_client_id']);
 
     // Don't Enforce Client Access if Ticket doesn't have an assigned client
@@ -2981,6 +2980,8 @@ if (isset($_GET['resolve_ticket'])) {
 
     // Resolve
     mysqli_query($mysqli, "UPDATE tickets SET ticket_status = 4, ticket_resolved_at = NOW() WHERE ticket_id = $ticket_id");
+
+    ticketPostAddStatusChangeHistory($ticket_id, $original_ticket_status_id, 4, $session_name);
 
     logAction("Ticket", "Resolved", "$session_name resolved ticket $ticket_prefix$ticket_number (ID: $ticket_id)", $client_id, $ticket_id);
 
@@ -3066,6 +3067,7 @@ if (isset($_GET['close_ticket'])) {
     enforceUserPermission('module_support', 2);
 
     $ticket_id = intval($_GET['close_ticket']);
+    $original_ticket_status_id = ticketPostGetCurrentStatusId($ticket_id);
     $client_id = intval(getFieldById('tickets', $ticket_id, 'ticket_client_id'));
 
     // Don't Enforce Client Access if Ticket doesn't have an assigned client
@@ -3076,6 +3078,7 @@ if (isset($_GET['close_ticket'])) {
     mysqli_query($mysqli, "UPDATE tickets SET ticket_status = 5, ticket_closed_at = NOW(), ticket_closed_by = $session_user_id WHERE ticket_id = $ticket_id") or die(mysqli_error($mysqli));
 
     ticketPostAddStatusChangeHistory($ticket_id, $original_ticket_status_id, 5, $session_name);
+
 
     mysqli_query($mysqli, "INSERT INTO ticket_replies SET ticket_reply = 'Ticket closed.', ticket_reply_type = 'Internal', ticket_reply_time_worked = '00:01:00', ticket_reply_by = $session_user_id, ticket_reply_ticket_id = $ticket_id");
 
@@ -3109,7 +3112,6 @@ if (isset($_GET['close_ticket'])) {
         // Get Company Info
         $sql = mysqli_query($mysqli, "SELECT company_name, company_phone, company_phone_country_code FROM companies WHERE company_id = 1");
         $row = mysqli_fetch_assoc($sql);
-    $original_ticket_status_id = intval($row['ticket_status'] ?? 0);
         $company_name = sanitizeInput($row['company_name']);
         $company_phone = sanitizeInput(formatPhoneNumber($row['company_phone'], $row['company_phone_country_code']));
 
@@ -3161,6 +3163,7 @@ if (isset($_GET['reopen_ticket'])) {
     enforceUserPermission('module_support', 2);
 
     $ticket_id = intval($_GET['reopen_ticket']);
+    $original_ticket_status_id = ticketPostGetCurrentStatusId($ticket_id);
 
     $client_id = intval(getFieldById('tickets', $ticket_id, 'ticket_client_id'));
 
@@ -3172,6 +3175,7 @@ if (isset($_GET['reopen_ticket'])) {
     mysqli_query($mysqli, "UPDATE tickets SET ticket_status = 2, ticket_resolved_at = NULL WHERE ticket_id = $ticket_id");
 
     ticketPostAddStatusChangeHistory($ticket_id, $original_ticket_status_id, 2, $session_name);
+
 
     logAction("Ticket", "Reopened", "$session_name reopened ticket ID $ticket_id", $client_id, $ticket_id);
 
@@ -3207,7 +3211,6 @@ if (isset($_POST['add_invoice_from_ticket'])) {
     );
 
     $row = mysqli_fetch_assoc($sql);
-    $original_ticket_status_id = intval($row['ticket_status'] ?? 0);
     $client_id = intval($row['client_id']);
     $client_net_terms = intval($row['client_net_terms']);
     if ($client_net_terms == 0) {
