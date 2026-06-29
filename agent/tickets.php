@@ -466,11 +466,16 @@ $sql_categories_filter = mysqli_query(
                         <div class="col-md-3">
                             <div class="form-group">
                                 <label>Ticket Status</label>
-                                <select onchange="this.form.submit()" class="form-control select2" name="status[]" data-placeholder="Any" multiple>
+                                <select onchange="this.form.submit()" class="form-control select2 itflow-ticket-filter-select" name="status[]" data-placeholder="Any" multiple>
                                     <!-- ITFLOW_TICKET_STATUS_PLACEHOLDER_ANY_UI -->
+                                    <?php $sql_ticket_status = mysqli_query($mysqli, "SELECT * FROM ticket_statuses WHERE ticket_status_active = 1 ORDER BY ticket_status_order"); ?>
                                         <!-- ITFLOW_TICKET_FILTER_ANY_CLEAR_ACTIONS_STATUS -->
                                     <option value="__clear__" data-itflow-clear-filter="status">Any</option>
-                                    <?php $sql_ticket_status = mysqli_query($mysqli, "SELECT * FROM ticket_statuses WHERE ticket_status_active = 1 ORDER BY ticket_status_order");
+                                    <?php if (mysqli_num_rows($sql_ticket_status) > 0) { ?>
+                                        <!-- ITFLOW_TICKET_FILTER_ANY_SEPARATOR_STATUS -->
+                                        <option value="__separator_status__" disabled data-itflow-separator="1">────────────</option>
+                                    <?php } ?>
+                                    <?php
                                         while ($row = mysqli_fetch_assoc($sql_ticket_status)) {
                                             $ticket_status_id = intval($row['ticket_status_id']);
                                             $ticket_status_name = nullable_htmlentities($row['ticket_status_name']); ?>
@@ -484,15 +489,19 @@ $sql_categories_filter = mysqli_query(
                         <div class="col-md-3">
                             <div class="form-group">
                                 <label>Assigned to</label>
-                                <select onchange="this.form.submit()" class="form-control select2" name="assigned[]" data-placeholder="Any" multiple>
+                                <select onchange="this.form.submit()" class="form-control select2 itflow-ticket-filter-select" name="assigned[]" data-placeholder="Any" multiple>
                                     <!-- ITFLOW_TICKET_ASSIGNED_PLACEHOLDER_ANY_UI -->
+                                    <?php $sql_assign_to = mysqli_query($mysqli, "SELECT * FROM users WHERE user_type = 1 AND user_archived_at IS NULL ORDER BY user_name ASC"); ?>
                                     <!-- ITFLOW_TICKET_ASSIGNED_ANY_UNASSIGNED_ORDER -->
                                     <!-- ITFLOW_TICKET_FILTER_ANY_CLEAR_ACTIONS_ASSIGNED -->
                                     <option value="__clear__" data-itflow-clear-filter="assigned">Any</option>
+                                    <?php if (mysqli_num_rows($sql_assign_to) > 0) { ?>
+                                        <!-- ITFLOW_TICKET_FILTER_ANY_SEPARATOR_ASSIGNED -->
+                                        <option value="__separator_assigned__" disabled data-itflow-separator="1">────────────</option>
+                                    <?php } ?>
                                     <option value="unassigned" <?php if (!empty($ticket_assigned_filter_values) && in_array('unassigned', $ticket_assigned_filter_values, true)) { echo "selected"; } ?>>Unassigned</option>
 
                                     <?php
-                                    $sql_assign_to = mysqli_query($mysqli, "SELECT * FROM users WHERE user_type = 1 AND user_archived_at IS NULL ORDER BY user_name ASC");
                                     while ($row = mysqli_fetch_assoc($sql_assign_to)) {
                                         $user_id = intval($row['user_id']);
                                         $user_name = nullable_htmlentities($row['user_name']);
@@ -508,12 +517,16 @@ $sql_categories_filter = mysqli_query(
                         <div class="col-md-3">
                             <div class="form-group">
                                 <label>Project</label>
-                                <select onchange="this.form.submit()" class="form-control select2" name="project[]" data-placeholder="Any" multiple>
+                                <select onchange="this.form.submit()" class="form-control select2 itflow-ticket-filter-select" name="project[]" data-placeholder="Any" multiple>
                                     <!-- ITFLOW_TICKET_PROJECT_PLACEHOLDER_ANY_UI -->
+                                    <?php $sql_projects = mysqli_query($mysqli, "SELECT * FROM projects WHERE project_completed_at IS NULL and project_archived_at IS NULL ORDER BY project_name ASC"); ?>
                                     <!-- ITFLOW_TICKET_FILTER_ANY_CLEAR_ACTIONS_PROJECT -->
                                     <option value="__clear__" data-itflow-clear-filter="project">Any</option>
+                                    <?php if (mysqli_num_rows($sql_projects) > 0) { ?>
+                                        <!-- ITFLOW_TICKET_FILTER_ANY_SEPARATOR_PROJECT -->
+                                        <option value="__separator_project__" disabled data-itflow-separator="1">────────────</option>
+                                    <?php } ?>
                                     <?php
-                                    $sql_projects = mysqli_query($mysqli, "SELECT * FROM projects WHERE project_completed_at IS NULL and project_archived_at IS NULL ORDER BY project_name ASC");
                                     while ($row = mysqli_fetch_assoc($sql_projects)) {
                                         $project_id = intval($row['project_id']);
                                         $project_prefix = nullable_htmlentities($row['project_prefix']);
@@ -560,6 +573,20 @@ if (isset($_GET["view"])) {
 <script>
 // ITFLOW_TICKET_FILTER_ANY_CLEAR_ACTIONS_JS
 document.addEventListener('DOMContentLoaded', function () {
+    
+// ITFLOW_TICKET_FILTER_ANY_SEPARATOR_STYLE
+if (window.jQuery && window.jQuery.fn && window.jQuery.fn.select2) {
+    window.jQuery('.itflow-ticket-filter-select').select2({
+        templateResult: function (data) {
+            if (data && data.element && data.element.getAttribute('data-itflow-separator') === '1') {
+                return window.jQuery('<span class="text-muted d-block border-top my-1 pt-1"></span>');
+            }
+
+            return data.text;
+        }
+    });
+}
+
     var clearValue = '__clear__';
     var filterNames = ['status[]', 'assigned[]', 'project[]'];
 
