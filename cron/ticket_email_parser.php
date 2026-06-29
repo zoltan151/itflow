@@ -28,6 +28,69 @@ require_once "../functions.php";
 // Get settings for the "default" company
 require_once "../includes/load_global_settings.php";
 
+
+// ITFLOW_EMAIL_PARSER_DISPLAY_NAME_CLEANUP
+if (!function_exists('parserCleanEmailDisplayName')) {
+    function parserCleanEmailDisplayName(string $name, string $email = ''): string {
+        $name = trim($name);
+        $email = trim($email);
+
+        if ($name === '') {
+            return '';
+        }
+
+        // Normalize HTML entities and common escaped quote/backslash artifacts from mail headers.
+        $name = html_entity_decode($name, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        // Repeatedly remove slashes because some Google Group / forwarded headers arrive double-escaped.
+        for ($i = 0; $i < 4; $i++) {
+            $unslashed = stripslashes($name);
+            if ($unslashed === $name) {
+                break;
+            }
+            $name = $unslashed;
+        }
+
+        $name = preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $name);
+        $name = trim($name);
+
+        // Remove leading/trailing quote wrappers and leftover slashes.
+        for ($i = 0; $i < 4; $i++) {
+            $before = $name;
+            $name = trim($name);
+            $name = trim($name, " \t\n\r\0\x0B\\\"'`“”‘’<>");
+            $name = preg_replace('/^(?:\\\\+|"+|\'+|`+)+/u', '', $name);
+            $name = preg_replace('/(?:\\\\+|"+|\'+|`+)+$/u', '', $name);
+            $name = trim($name);
+            if ($name === $before) {
+                break;
+            }
+        }
+
+        // Collapse quote/backslash junk that can remain between words.
+        $name = preg_replace('/\\\\+/', '', $name);
+        $name = preg_replace('/"{2,}/', '"', $name);
+        $name = preg_replace("/'{2,}/", "'", $name);
+        $name = preg_replace('/\s+/', ' ', $name);
+        $name = trim($name, " \t\n\r\0\x0B\\\"'`“”‘’<>");
+
+        // If the parser accidentally used the email address as the name, leave it blank
+        // so the normal fallback can use the email/local part.
+        if ($email !== '' && strcasecmp($name, $email) === 0) {
+            return '';
+        }
+
+        // If the display name still contains an address wrapper, remove the address.
+        if ($email !== '') {
+            $quoted_email = preg_quote($email, '/');
+            $name = preg_replace('/<\s*' . $quoted_email . '\s*>/i', '', $name);
+            $name = trim($name, " \t\n\r\0\x0B\\\"'`“”‘’<>");
+        }
+
+        return $name;
+    }
+}
+
 $config_ticket_prefix = sanitizeInput($config_ticket_prefix);
 $config_ticket_from_name = sanitizeInput($config_ticket_from_name);
 $config_ticket_email_parse_unknown_senders = intval($row['config_ticket_email_parse_unknown_senders']);
@@ -1702,6 +1765,7 @@ foreach ($messages as $message) {
     $from_email = sanitizeInput(parserNormalizeEmail($from_first->mail ?? 'itflow-guest@example.com'));
     $from_name  = sanitizeInput($from_first->personal ?? 'Unknown');
 
+    $from_name = parserCleanEmailDisplayName((string)$from_name, (string)($from_email ?? ''));
     // Mailing lists can intermittently rewrite From: to a configured infrastructure address while preserving
     // the real sender in Reply-To / X-Original-* headers. Recover that sender before any
     // contact/domain/ticket matching happens.
@@ -1920,6 +1984,7 @@ foreach ($messages as $message) {
 
         if ($rowc) {
             $contact_name  = sanitizeInput($rowc['contact_name']);
+            $contact_name = parserCleanEmailDisplayName((string)$contact_name, (string)($contact_email ?? ''));
             $contact_id    = intval($rowc['contact_id']);
             $contact_email = sanitizeInput($rowc['contact_email']);
             $client_id     = intval($rowc['contact_client_id']);
