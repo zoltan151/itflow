@@ -401,13 +401,86 @@ require_once '../../../includes/modal_footer.php';
         });
     }
 
+    // ITFLOW_NEW_TICKET_HIDDEN_TAB_REQUIRED_VALIDATION
+    function fieldRoot(field) {
+        return field.closest('.form-group, .input-group, .col, .col-md-3, .col-md-4, .col-md-6, .col-md-8, .col-md-12, .form-row, .row') || field.parentElement || field;
+    }
+
+    function findNearbyLabel(field) {
+        var label = null;
+
+        if (field.id) {
+            try {
+                label = document.querySelector('label[for="' + field.id.replace(/"/g, '\\"') + '"]');
+            } catch (error) {}
+        }
+
+        if (!label) {
+            var root = fieldRoot(field);
+            if (root) {
+                label = root.querySelector('label');
+            }
+        }
+
+        if (!label) {
+            var pane = field.closest('.tab-pane, [role="tabpanel"]');
+            if (pane) {
+                var labels = Array.prototype.slice.call(pane.querySelectorAll('label'));
+                labels.some(function (candidate) {
+                    var candidateRoot = fieldRoot(candidate);
+                    if (candidateRoot && candidateRoot.contains(field)) {
+                        label = candidate;
+                        return true;
+                    }
+                    return false;
+                });
+            }
+        }
+
+        return label;
+    }
+
+    function labelLooksRequired(field) {
+        var label = findNearbyLabel(field);
+        var labelText = textOf(label);
+
+        if (!labelText) {
+            return false;
+        }
+
+        return labelText.indexOf('*') !== -1;
+    }
+
+    function fieldLooksRequired(field) {
+        if (field.required || field.getAttribute('aria-required') === 'true' || field.getAttribute('data-required') === 'true') {
+            return true;
+        }
+
+        if (labelLooksRequired(field)) {
+            return true;
+        }
+
+        var root = fieldRoot(field);
+        if (root && textOf(root).indexOf('*') !== -1 && (
+            field.tagName === 'SELECT' ||
+            field.tagName === 'TEXTAREA' ||
+            (field.tagName === 'INPUT' && ['hidden', 'button', 'submit', 'reset'].indexOf((field.type || '').toLowerCase()) === -1)
+        )) {
+            return true;
+        }
+
+        return false;
+    }
+
     function getRequiredFields(form) {
-        return Array.prototype.slice.call(form.querySelectorAll('input, select, textarea')).filter(function (field) {
+        var fields = Array.prototype.slice.call(form.querySelectorAll('input, select, textarea')).filter(function (field) {
+            var type = (field.type || '').toLowerCase();
+
             if (field.disabled) {
                 return false;
             }
 
-            if ((field.type || '').toLowerCase() === 'hidden') {
+            if (type === 'hidden' || type === 'button' || type === 'submit' || type === 'reset') {
                 return false;
             }
 
@@ -415,25 +488,33 @@ require_once '../../../includes/modal_footer.php';
                 return false;
             }
 
-            return field.required || field.getAttribute('aria-required') === 'true' || field.getAttribute('data-required') === 'true';
+            if (field.hasAttribute('data-itflow-ignore-required-validation')) {
+                return false;
+            }
+
+            return fieldLooksRequired(field);
+        });
+
+        // Deduplicate radio/checkbox groups so one missing group does not produce repeated tab counts.
+        var seenGroups = {};
+        return fields.filter(function (field) {
+            var type = (field.type || '').toLowerCase();
+            if ((type === 'checkbox' || type === 'radio') && field.name) {
+                var key = type + ':' + field.name;
+                if (seenGroups[key]) {
+                    return false;
+                }
+                seenGroups[key] = true;
+            }
+
+            return true;
         });
     }
 
     function fieldLabel(field) {
-        var label = null;
-
-        if (field.id) {
-            label = document.querySelector('label[for="' + field.id.replace(/"/g, '\\"') + '"]');
-        }
-
-        if (!label) {
-            var group = field.closest('.form-group, .input-group, .col, .col-md-3, .col-md-4, .col-md-6, .col-md-12');
-            if (group) {
-                label = group.querySelector('label');
-            }
-        }
-
+        var label = findNearbyLabel(field);
         var labelText = textOf(label);
+
         if (labelText) {
             return labelText.replace(/\*/g, '').trim();
         }
@@ -480,10 +561,11 @@ require_once '../../../includes/modal_footer.php';
             return false;
         }
 
-        if (field.required && getFieldValue(field) === '') {
+        if (fieldLooksRequired(field) && getFieldValue(field) === '') {
             return true;
         }
 
+        // Only use native validity as a secondary check. Manual required validation above is what catches hidden-tab fields.
         if (typeof field.checkValidity === 'function' && !field.checkValidity()) {
             return true;
         }
