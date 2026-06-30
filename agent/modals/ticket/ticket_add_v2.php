@@ -322,10 +322,6 @@ $(document).on('change', '#ticket_template_select', function () {
 <link rel="stylesheet" href="/plugins/jquery-ui/jquery-ui.min.css">
 <script src="/plugins/jquery-ui/jquery-ui.min.js"></script>
 <script src="/agent/js/tickets_add_modal.js"></script>
-
-<?php
-
-require_once '../../../includes/modal_footer.php';
 ?>
 
 <style>
@@ -368,6 +364,7 @@ require_once '../../../includes/modal_footer.php';
 
 <script>
 // ITFLOW_NEW_TICKET_REQUIRED_TAB_VALIDATION
+// ITFLOW_NEW_TICKET_VALIDATION_BEFORE_MODAL_FOOTER
 (function () {
     var initializedForms = [];
 
@@ -957,3 +954,7 @@ require_once '../../../includes/modal_footer.php';
 })();
 </script>
 
+<?php
+
+require_once '../../../includes/modal_footer.php';
+?>
