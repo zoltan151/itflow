@@ -2,6 +2,7 @@
 // ITFLOW_PLATFORM_ROADMAP_PHASE3B
 // ITFLOW_ROADMAP_PHASE3E_PLANNING_FIELDS
 // ITFLOW_ROADMAP_DROPDOWN_FIX
+// ITFLOW_ROADMAP_QUICK_PIN_EDIT_FIX
 
 require_once "includes/inc_all.php";
 
@@ -428,6 +429,20 @@ $sql_roadmap_items = mysqli_query(
                                 </h5>
 
                                 <?php if (lookupUserPermission("module_config") >= 2) { ?>
+                                    <div class="btn-group mr-1 itflow-roadmap-quick-pin">
+                                        <?php if ($pinned) { ?>
+                                            <a class="btn btn-sm btn-warning confirm-link" href="post.php?unpin_roadmap_item=<?= $roadmap_item_id ?>&csrf_token=<?= $_SESSION['csrf_token'] ?>" title="Unpin roadmap item">
+                                                <i class="fas fa-thumbtack"></i>
+                                                <span class="sr-only">Unpin roadmap item</span>
+                                            </a>
+                                        <?php } else { ?>
+                                            <a class="btn btn-sm btn-light confirm-link" href="post.php?pin_roadmap_item=<?= $roadmap_item_id ?>&csrf_token=<?= $_SESSION['csrf_token'] ?>" title="Pin roadmap item">
+                                                <i class="fas fa-thumbtack"></i>
+                                                <span class="sr-only">Pin roadmap item</span>
+                                            </a>
+                                        <?php } ?>
+                                    </div>
+
                                     <div class="btn-group itflow-roadmap-card-actions">
                                         <button type="button"
                                             class="btn btn-sm btn-light dropdown-toggle itflow-roadmap-action-toggle"
@@ -440,7 +455,7 @@ $sql_roadmap_items = mysqli_query(
                                             <span class="sr-only">Roadmap item actions</span>
                                         </button>
                                         <div class="dropdown-menu dropdown-menu-right">
-                                            <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/roadmap/roadmap_edit.php?id=<?= $roadmap_item_id ?>" data-modal-size="lg">
+                                            <a class="dropdown-item ajax-modal itflow-roadmap-edit-action" href="modals/roadmap/roadmap_edit.php?id=<?= $roadmap_item_id ?>" data-modal-url="modals/roadmap/roadmap_edit.php?id=<?= $roadmap_item_id ?>" data-modal-size="lg">
                                                 <i class="fas fa-edit fa-fw mr-2"></i>Edit
                                             </a>
                                             <?php if (!$archived_at) { ?>
@@ -547,6 +562,11 @@ $sql_roadmap_items = mysqli_query(
 <!-- ITFLOW_ROADMAP_DROPDOWN_FIX_FALLBACK -->
 
 <style>
+    .itflow-roadmap-quick-pin .btn,
+    .itflow-roadmap-card-actions .btn {
+        min-width: 32px;
+    }
+
     .itflow-roadmap-card-actions .dropdown-menu {
         z-index: 2050;
     }
@@ -593,6 +613,59 @@ document.addEventListener('DOMContentLoaded', function () {
         menu.classList.toggle('show', shouldOpen);
         toggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
     }, true);
+});
+</script>
+
+
+
+<!-- ITFLOW_ROADMAP_EDIT_MODAL_FALLBACK -->
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    document.addEventListener('click', function (event) {
+        var editLink = event.target.closest('.itflow-roadmap-edit-action');
+
+        if (!editLink) {
+            return;
+        }
+
+        if (editLink.dataset.itflowRoadmapFallbackBound === '1') {
+            return;
+        }
+
+        var modalUrl = editLink.getAttribute('data-modal-url') || editLink.getAttribute('href');
+
+        if (!modalUrl || modalUrl === '#') {
+            return;
+        }
+
+        setTimeout(function () {
+            var visibleModal = document.querySelector('.modal.show');
+
+            if (visibleModal) {
+                return;
+            }
+
+            if (!window.jQuery) {
+                return;
+            }
+
+            window.jQuery.get(modalUrl, function (html) {
+                var container = window.jQuery('#itflowRoadmapModalFallbackContainer');
+
+                if (!container.length) {
+                    container = window.jQuery('<div id="itflowRoadmapModalFallbackContainer"></div>').appendTo('body');
+                }
+
+                container.html(html);
+
+                var modal = container.find('.modal').first();
+
+                if (modal.length) {
+                    modal.modal('show');
+                }
+            });
+        }, 250);
+    }, false);
 });
 </script>
 

@@ -1,6 +1,7 @@
 <?php
 // ITFLOW_PLATFORM_ROADMAP_PHASE3B
 // ITFLOW_ROADMAP_PHASE3E_PLANNING_FIELDS
+// ITFLOW_ROADMAP_QUICK_PIN_EDIT_FIX
 
 /*
  * ITFlow - Roadmap POST handler
@@ -143,6 +144,43 @@ if (isset($_POST['edit_roadmap_item'])) {
     flash_alert("Roadmap item <strong>$title</strong> updated");
 
     redirect("roadmap.php");
+
+}
+
+
+if (isset($_GET['pin_roadmap_item'])) {
+
+    validateCSRFToken($_GET['csrf_token']);
+
+    enforceUserPermission('module_config', 2);
+
+    $roadmap_item_id = intval($_GET['pin_roadmap_item']);
+
+    mysqli_query($mysqli, "UPDATE roadmap_items SET roadmap_item_pinned = 1, roadmap_item_updated_at = NOW(), roadmap_item_updated_by = $session_user_id WHERE roadmap_item_id = $roadmap_item_id");
+
+    logAction("Roadmap", "Pin", "$session_name pinned roadmap item", 0, $roadmap_item_id);
+
+    flash_alert("Roadmap item pinned");
+
+    redirect($_SERVER['HTTP_REFERER'] ?? "roadmap.php");
+
+}
+
+if (isset($_GET['unpin_roadmap_item'])) {
+
+    validateCSRFToken($_GET['csrf_token']);
+
+    enforceUserPermission('module_config', 2);
+
+    $roadmap_item_id = intval($_GET['unpin_roadmap_item']);
+
+    mysqli_query($mysqli, "UPDATE roadmap_items SET roadmap_item_pinned = 0, roadmap_item_updated_at = NOW(), roadmap_item_updated_by = $session_user_id WHERE roadmap_item_id = $roadmap_item_id");
+
+    logAction("Roadmap", "Unpin", "$session_name unpinned roadmap item", 0, $roadmap_item_id);
+
+    flash_alert("Roadmap item unpinned");
+
+    redirect($_SERVER['HTTP_REFERER'] ?? "roadmap.php");
 
 }
 
