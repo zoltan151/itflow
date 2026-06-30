@@ -2,6 +2,7 @@
 // ITFLOW_NETWORK_DIAGRAM_PHASE2C
 // ITFLOW_NETWORK_DIAGRAM_PHASE2C_SCHEMA_FIX
 // ITFLOW_NETWORK_DIAGRAM_SMART_GROUPS
+// ITFLOW_NETWORK_DIAGRAM_IP_SUBNET_FALLBACK
 
 /*
  * ITFlow - GET/POST request handler for client networks
@@ -153,6 +154,80 @@ if (isset($_GET['generate_network_diagram'])) {
                 ];
 
                 $interface_count++;
+            }
+        }
+    }
+
+    if (
+        count($assets_for_diagram) == 0
+        && $network_cidr
+        && strpos($network_cidr, '/') !== false
+        && $asset_interfaces_exists
+        && isset($interface_columns['interface_asset_id'])
+        && isset($interface_columns['interface_ip'])
+    ) {
+        // ITFLOW_NETWORK_DIAGRAM_IP_SUBNET_FALLBACK
+        // If interfaces are not explicitly mapped to the network, match interface IPs to the network CIDR.
+        $cidr_parts = explode('/', $network_cidr, 2);
+        $cidr_base = trim($cidr_parts[0] ?? '');
+        $cidr_prefix = intval($cidr_parts[1] ?? -1);
+        $cidr_base_long = ip2long($cidr_base);
+
+        if ($cidr_base_long !== false && $cidr_prefix >= 0 && $cidr_prefix <= 32) {
+            $cidr_mask = $cidr_prefix == 0 ? 0 : ((-1 << (32 - $cidr_prefix)) & 0xFFFFFFFF);
+            $cidr_network_long = $cidr_base_long & $cidr_mask;
+            $interface_name_select = isset($interface_columns['interface_name']) ? "asset_interfaces.interface_name" : "'' AS interface_name";
+            $interface_archived_clause = isset($interface_columns['interface_archived_at']) ? "AND asset_interfaces.interface_archived_at IS NULL" : "";
+
+            $sql_assets_by_ip = mysqli_query(
+                $mysqli,
+                "SELECT DISTINCT
+                    assets.asset_id,
+                    assets.asset_name,
+                    assets.asset_type,
+                    assets.asset_make,
+                    assets.asset_model,
+                    assets.asset_status,
+                    $interface_name_select,
+                    asset_interfaces.interface_ip
+                 FROM asset_interfaces
+                 LEFT JOIN assets ON interface_asset_id = assets.asset_id
+                 WHERE assets.asset_client_id = $client_id
+                   AND assets.asset_archived_at IS NULL
+                   AND asset_interfaces.interface_ip != ''
+                   $interface_archived_clause
+                 ORDER BY assets.asset_type ASC, assets.asset_name ASC
+                 LIMIT 1000"
+            );
+
+            if ($sql_assets_by_ip) {
+                while ($asset = mysqli_fetch_assoc($sql_assets_by_ip)) {
+                    $asset_id = intval($asset['asset_id']);
+                    $asset_name = sanitizeInput($asset['asset_name'] ?? '');
+                    $interface_ip_raw = trim($asset['interface_ip'] ?? '');
+                    $interface_ip_long = ip2long($interface_ip_raw);
+
+                    if (!$asset_id || !$asset_name || $interface_ip_long === false) {
+                        continue;
+                    }
+
+                    if (($interface_ip_long & $cidr_mask) !== $cidr_network_long) {
+                        continue;
+                    }
+
+                    $assets_for_diagram[$asset_id] = [
+                        'asset_name' => $asset_name,
+                        'asset_type' => sanitizeInput($asset['asset_type'] ?? ''),
+                        'asset_make' => sanitizeInput($asset['asset_make'] ?? ''),
+                        'asset_model' => sanitizeInput($asset['asset_model'] ?? ''),
+                        'asset_status' => sanitizeInput($asset['asset_status'] ?? ''),
+                        'interface_name' => sanitizeInput($asset['interface_name'] ?? ''),
+                        'interface_ip' => sanitizeInput($interface_ip_raw),
+                        'source' => 'subnet',
+                    ];
+
+                    $interface_count++;
+                }
             }
         }
     }
