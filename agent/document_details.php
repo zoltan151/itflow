@@ -1,5 +1,6 @@
 <?php
 // ITFLOW_DIAGRAM_WHITEBOARD_PHASE2B
+// ITFLOW_DOCUMENT_DATE_NULL_FIX
 // ITFLOW_DOCUMENT_TYPES_PHASE2A
 // ITFLOW_RENAME_FILES_SECTION_TO_DOCUMENTATION
 
@@ -52,6 +53,8 @@ $document_created_by_id = intval($row['document_created_by']);
 $document_created_by_name = nullable_htmlentities($row['user_name']);
 $document_created_at = nullable_htmlentities($row['document_created_at']);
 $document_updated_at = nullable_htmlentities($row['document_updated_at']);
+$document_display_date_raw = $row['document_updated_at'] ?: $row['document_created_at'];
+$document_display_date = $document_display_date_raw ? date('Y-m-d', strtotime($document_display_date_raw)) : '';
 $document_archived_at = nullable_htmlentities($row['document_archived_at']);
 $document_folder_id = intval($row['document_folder_id']);
 $document_client_visible = intval($row['document_client_visible']);
@@ -132,7 +135,7 @@ $page_title = $row['document_name'];
                         <div class="float-right">
                             <div>
                                 Date:
-                                <strong><?= date('Y-m-d', strtotime($document_updated_at)); ?></strong>
+                                <strong><?= $document_display_date ?></strong>
                             </div>
                             <?php if($document_created_by_name) { ?>
                             <div>

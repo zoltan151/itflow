@@ -1,6 +1,7 @@
 <?php
 // ITFLOW_NETWORK_DIAGRAM_PHASE2C
 // ITFLOW_NETWORK_DIAGRAM_PHASE2C_SCHEMA_FIX
+// ITFLOW_NETWORK_DIAGRAM_SMART_GROUPS
 
 /*
  * ITFlow - GET/POST request handler for client networks
@@ -73,7 +74,7 @@ if (isset($_GET['generate_network_diagram'])) {
     $diagram_lines[] = "$client_name -> $network_node";
 
     if ($location_name) {
-        $diagram_lines[] = "$network_node -> $location_name";
+        $diagram_lines[] = "$network_node -> Location: $location_name";
     }
 
     if ($network_gateway) {
@@ -86,6 +87,7 @@ if (isset($_GET['generate_network_diagram'])) {
 
     $asset_count = 0;
     $interface_count = 0;
+    $assets_for_diagram = [];
 
     $asset_interfaces_exists = false;
     $sql_table = mysqli_query($mysqli, "SHOW TABLES LIKE 'asset_interfaces'");
@@ -134,35 +136,28 @@ if (isset($_GET['generate_network_diagram'])) {
             while ($asset = mysqli_fetch_assoc($sql_assets)) {
                 $asset_id = intval($asset['asset_id']);
                 $asset_name = sanitizeInput($asset['asset_name'] ?? '');
-                $asset_type = sanitizeInput($asset['asset_type'] ?? '');
-                $asset_make = sanitizeInput($asset['asset_make'] ?? '');
-                $asset_model = sanitizeInput($asset['asset_model'] ?? '');
-                $interface_name = sanitizeInput($asset['interface_name'] ?? '');
-                $interface_ip = sanitizeInput($asset['interface_ip'] ?? '');
 
                 if (!$asset_id || !$asset_name) {
                     continue;
                 }
 
-                $asset_label = $asset_name;
+                $assets_for_diagram[$asset_id] = [
+                    'asset_name' => $asset_name,
+                    'asset_type' => sanitizeInput($asset['asset_type'] ?? ''),
+                    'asset_make' => sanitizeInput($asset['asset_make'] ?? ''),
+                    'asset_model' => sanitizeInput($asset['asset_model'] ?? ''),
+                    'asset_status' => sanitizeInput($asset['asset_status'] ?? ''),
+                    'interface_name' => sanitizeInput($asset['interface_name'] ?? ''),
+                    'interface_ip' => sanitizeInput($asset['interface_ip'] ?? ''),
+                    'source' => 'interface',
+                ];
 
-                if ($asset_type) {
-                    $asset_label .= " [$asset_type]";
-                }
-
-                if ($interface_ip) {
-                    $asset_label .= " ($interface_ip)";
-                } elseif ($interface_name) {
-                    $asset_label .= " ($interface_name)";
-                }
-
-                $diagram_lines[] = "$network_node -> $asset_label";
-                $asset_count++;
                 $interface_count++;
             }
         }
     }
-    if ($asset_count == 0) {
+
+    if (count($assets_for_diagram) == 0) {
         $asset_query = "SELECT asset_id, asset_name, asset_type, asset_make, asset_model, asset_status
             FROM assets
             WHERE asset_client_id = $client_id
@@ -180,21 +175,171 @@ if (isset($_GET['generate_network_diagram'])) {
             while ($asset = mysqli_fetch_assoc($sql_assets)) {
                 $asset_id = intval($asset['asset_id']);
                 $asset_name = sanitizeInput($asset['asset_name'] ?? '');
-                $asset_type = sanitizeInput($asset['asset_type'] ?? '');
 
                 if (!$asset_id || !$asset_name) {
                     continue;
                 }
 
-                $asset_label = $asset_name;
-
-                if ($asset_type) {
-                    $asset_label .= " [$asset_type]";
-                }
-
-                $diagram_lines[] = "$network_node -> $asset_label";
-                $asset_count++;
+                $assets_for_diagram[$asset_id] = [
+                    'asset_name' => $asset_name,
+                    'asset_type' => sanitizeInput($asset['asset_type'] ?? ''),
+                    'asset_make' => sanitizeInput($asset['asset_make'] ?? ''),
+                    'asset_model' => sanitizeInput($asset['asset_model'] ?? ''),
+                    'asset_status' => sanitizeInput($asset['asset_status'] ?? ''),
+                    'interface_name' => '',
+                    'interface_ip' => '',
+                    'source' => 'asset',
+                ];
             }
+        }
+    }
+
+    $asset_count = count($assets_for_diagram);
+
+    // ITFLOW_NETWORK_DIAGRAM_SMART_GROUPS
+    // Group assets into useful network diagram buckets instead of hanging every asset directly off the network node.
+    $diagram_groups = [
+        'firewall_router' => [
+            'label' => 'Firewall / Router',
+            'patterns' => ['firewall', 'router', 'gateway', 'edge', 'sonicwall', 'fortigate', 'fortinet', 'pfsense', 'opnsense', 'meraki mx', 'mx ', 'unifi gateway', 'udm', 'usg', 'edgerouter'],
+            'items' => [],
+        ],
+        'switching' => [
+            'label' => 'Switching',
+            'patterns' => ['switch', 'unifi switch', 'usw', 'catalyst', 'procurve', 'aruba', 'netgear', 'tp-link switch'],
+            'items' => [],
+        ],
+        'wifi' => [
+            'label' => 'WiFi / APs',
+            'patterns' => ['access point', 'ap ', ' ap', 'wifi', 'wi-fi', 'wireless', 'unifi ap', 'uap', 'meraki mr'],
+            'items' => [],
+        ],
+        'servers' => [
+            'label' => 'Servers / NAS',
+            'patterns' => ['server', 'nas', 'synology', 'qnap', 'esxi', 'hyper-v', 'hyperv', 'proxmox', 'domain controller', 'dc ', ' dc', 'vmware'],
+            'items' => [],
+        ],
+        'printers' => [
+            'label' => 'Printers',
+            'patterns' => ['printer', 'copier', 'mfp', 'xerox', 'canon', 'ricoh', 'brother', 'hp laserjet'],
+            'items' => [],
+        ],
+        'voip' => [
+            'label' => 'VoIP / Phones',
+            'patterns' => ['phone', 'voip', 'yealink', 'polycom', 'poly ', 'grandstream', 'ringotel', 'ata'],
+            'items' => [],
+        ],
+        'workstations' => [
+            'label' => 'Workstations',
+            'patterns' => ['workstation', 'desktop', 'laptop', 'pc', 'windows', 'macbook', 'imac'],
+            'items' => [],
+        ],
+        'other' => [
+            'label' => 'Other Network Assets',
+            'patterns' => [],
+            'items' => [],
+        ],
+    ];
+
+    foreach ($assets_for_diagram as $asset) {
+        $asset_search = strtolower(
+            $asset['asset_name'] . ' ' .
+            $asset['asset_type'] . ' ' .
+            $asset['asset_make'] . ' ' .
+            $asset['asset_model'] . ' ' .
+            $asset['interface_name'] . ' ' .
+            $asset['interface_ip']
+        );
+
+        $asset_group_key = 'other';
+
+        foreach ($diagram_groups as $group_key => $group) {
+            if ($group_key === 'other') {
+                continue;
+            }
+
+            foreach ($group['patterns'] as $pattern) {
+                if ($pattern !== '' && strpos($asset_search, $pattern) !== false) {
+                    $asset_group_key = $group_key;
+                    break 2;
+                }
+            }
+        }
+
+        $asset_label = $asset['asset_name'];
+
+        if ($asset['asset_type']) {
+            $asset_label .= " [" . $asset['asset_type'] . "]";
+        }
+
+        if ($asset['interface_ip']) {
+            $asset_label .= " (" . $asset['interface_ip'] . ")";
+        } elseif ($asset['interface_name']) {
+            $asset_label .= " (" . $asset['interface_name'] . ")";
+        }
+
+        $diagram_groups[$asset_group_key]['items'][] = $asset_label;
+    }
+
+    $core_node = '';
+
+    if ($network_gateway) {
+        $core_node = "Gateway $network_gateway";
+    } elseif (count($diagram_groups['firewall_router']['items']) > 0) {
+        $core_node = 'Firewall / Router';
+    } else {
+        $core_node = $network_node;
+    }
+
+    if ($core_node !== $network_node && $core_node !== "Gateway $network_gateway") {
+        $diagram_lines[] = "$network_node -> $core_node";
+    }
+
+    if (count($diagram_groups['firewall_router']['items']) > 0) {
+        foreach ($diagram_groups['firewall_router']['items'] as $item) {
+            if ($network_gateway) {
+                $diagram_lines[] = "Gateway $network_gateway -> $item";
+            } else {
+                $diagram_lines[] = "$network_node -> $item";
+            }
+        }
+    }
+
+    $has_switches = count($diagram_groups['switching']['items']) > 0;
+
+    if ($has_switches) {
+        if ($network_gateway) {
+            $diagram_lines[] = "Gateway $network_gateway -> Switching";
+        } elseif ($core_node !== $network_node) {
+            $diagram_lines[] = "$core_node -> Switching";
+        } else {
+            $diagram_lines[] = "$network_node -> Switching";
+        }
+
+        foreach ($diagram_groups['switching']['items'] as $item) {
+            $diagram_lines[] = "Switching -> $item";
+        }
+    }
+
+    foreach (['wifi', 'servers', 'printers', 'voip', 'workstations', 'other'] as $group_key) {
+        if (count($diagram_groups[$group_key]['items']) == 0) {
+            continue;
+        }
+
+        $group_label = $diagram_groups[$group_key]['label'];
+
+        if ($has_switches) {
+            $diagram_lines[] = "Switching -> $group_label";
+        } elseif ($network_gateway) {
+            $diagram_lines[] = "Gateway $network_gateway -> $group_label";
+        } elseif ($core_node !== $network_node) {
+            $diagram_lines[] = "$core_node -> $group_label";
+        } else {
+            $diagram_lines[] = "$network_node -> $group_label";
+        }
+
+        foreach ($diagram_groups[$group_key]['items'] as $item) {
+            $diagram_lines[] = "$group_label -> $item";
         }
     }
 
