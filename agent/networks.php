@@ -1,4 +1,5 @@
 <?php
+// ITFLOW_NETWORK_DIAGRAM_PHASE2C
 
 // Default Column Sortby Filter
 $sort = "network_name";
@@ -307,6 +308,10 @@ $num_rows = mysqli_fetch_row(mysqli_query($mysqli, "SELECT FOUND_ROWS()"));
                                         </div>
                                     </div>
                                 </a>
+
+                            <a class="dropdown-item confirm-link" href="post.php?generate_network_diagram=<?php echo $network_id; ?>&csrf_token=<?= $_SESSION['csrf_token'] ?>">
+                                <i class="fas fa-fw fa-project-diagram mr-2"></i>Create Diagram
+                            </a>
                             </td>
                             <td><?= $location_name_display ?></td>
                             <td><?= $network_vlan_display ?></td>
