@@ -146,7 +146,7 @@ $page_title = $row['document_name'];
             </div>
             
                 <?php if ($document_diagram_enabled) { ?>
-                <div class="card-body border-bottom itflow-diagram-whiteboard" data-itflow-marker="ITFLOW_DIAGRAM_WHITEBOARD_PHASE2B">
+            <div class="card-body border-bottom itflow-diagram-whiteboard" data-itflow-marker="ITFLOW_DIAGRAM_WHITEBOARD_PHASE2B">
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <div>
                             <h5 class="mb-0"><i class="fas fa-project-diagram mr-2"></i>Diagram / Whiteboard</h5>
@@ -183,10 +183,10 @@ $page_title = $row['document_name'];
                     <div class="border rounded bg-light p-2">
                         <div id="itflowDiagramPreview" style="min-height: 260px; overflow-x: auto;"></div>
                     </div>
-                </div>
-                <?php } ?>
+            </div>
+            <?php } ?>
 
-<div class="card-body prettyContent">
+            <div class="card-body prettyContent">
                 <?= $document_content ?>
                 <hr>
                 <h4>Documentation Revision History</h4>
