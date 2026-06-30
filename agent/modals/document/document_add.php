@@ -7,6 +7,24 @@ $contact_id = intval($_GET['contact_id'] ?? 0);
 $asset_id = intval($_GET['asset_id'] ?? 0);
 intval($_GET['folder_id'] ?? 0);
 
+// ITFLOW_CLIENT_DOCUMENT_ADD_LOCKED_CLIENT_CONTEXT
+$client_name_display = '';
+
+if ($client_id > 0) {
+    $sql_client_context = mysqli_query(
+        $mysqli,
+        "SELECT client_name FROM clients WHERE client_id = $client_id LIMIT 1"
+    );
+
+    if ($row_client_context = mysqli_fetch_assoc($sql_client_context)) {
+        $client_name_display = nullable_htmlentities($row_client_context['client_name']);
+    }
+}
+
+if (!$client_name_display) {
+    $client_name_display = 'Unknown Client';
+}
+
 ob_start();
 
 ?>
@@ -22,6 +40,17 @@ ob_start();
     <input type="hidden" name="contact" value="<?= $contact_id ?>">
     <input type="hidden" name="asset" value="<?= $asset_id ?>">
     <div class="modal-body">
+
+        <div class="form-group">
+            <label>Client</label>
+            <div class="input-group">
+                <div class="input-group-prepend">
+                    <span class="input-group-text"><i class="fa fa-fw fa-building"></i></span>
+                </div>
+                <input type="text" class="form-control bg-light text-muted" value="<?= $client_name_display ?>" readonly disabled>
+            </div>
+            <small class="form-text text-muted">This document will be created under this client.</small>
+        </div>
 
         <div class="form-group">
             <input type="text" class="form-control" name="name" placeholder="Name" maxlength="200" required autofocus>
