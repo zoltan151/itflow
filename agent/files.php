@@ -1,4 +1,5 @@
 <?php
+// ITFLOW_RENAME_FILES_SECTION_TO_DOCUMENTATION
 
 // Unified sort: "name" is logical field, not DB column
 $sort = "name";
@@ -429,7 +430,7 @@ $num_root_items = intval($row_root_files['num']) + intval($row_root_docs['num'])
 <div class="card card-dark">
 
     <div class="card-header py-2">
-        <h3 class="card-title mt-2"><i class="fa fa-fw fa-folder mr-2"></i>Files</h3>
+        <h3 class="card-title mt-2"><i class="fa fa-fw fa-folder mr-2"></i>Documentation</h3>
 
         <div class="card-tools">
 
@@ -509,7 +510,7 @@ $num_root_items = intval($row_root_files['num']) + intval($row_root_docs['num'])
                             <div class="input-group mb-3 mb-md-0">
                                 <input type="search" class="form-control" name="q"
                                        value="<?php if (isset($q)) { echo stripslashes(nullable_htmlentities($q)); } ?>"
-                                       placeholder="Search files and documents in <?php echo ($get_folder_id == 0 ? 'all folders' : 'current folder'); ?>">
+                                       placeholder="Search documentation in <?php echo ($get_folder_id == 0 ? 'all folders' : 'current folder'); ?>">
                                 <div class="input-group-append">
                                     <button class="btn btn-dark"><i class="fa fa-search"></i></button>
                                 </div>

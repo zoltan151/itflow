@@ -1,4 +1,5 @@
 <?php
+// ITFLOW_RENAME_FILES_SECTION_TO_DOCUMENTATION
 
 require_once "includes/inc_all_client.php";
 
@@ -54,7 +55,7 @@ $page_title = $row['document_name'];
         <a href="client_overview.php?client_id=<?= $client_id ?>"><?= $client_name ?></a>
     </li>
     <li class="breadcrumb-item">
-        <a href="files.php?client_id=<?= $client_id ?>">Files</a>
+        <a href="files.php?client_id=<?= $client_id ?>">Documentation</a>
     </li>
     <?php
     // Build the full folder path

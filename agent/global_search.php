@@ -1,4 +1,5 @@
 <?php
+// ITFLOW_RENAME_FILES_SECTION_TO_DOCUMENTATION
 
 require_once "includes/inc_all.php";
 
@@ -421,7 +422,7 @@ if (isset($_GET['query'])) {
                                 <tr>
                                     <td><a href="document_details.php?client_id=<?php echo $client_id ?>&document_id=<?php echo $document_id; ?>"><?php echo $document_name; ?></a></td>
                                     <td>
-                                        <a href="documents.php?client_id=<?php echo $client_id; ?>"><?php echo $client_name; ?></a>
+                                        <a href="files.php?client_id=<?php echo $client_id; ?>"><?php echo $client_name; ?></a>
                                     </td>
                                 </tr>
 

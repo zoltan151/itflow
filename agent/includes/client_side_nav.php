@@ -1,5 +1,6 @@
 <!-- Main Sidebar Container -->
-<aside class="main-sidebar sidebar-dark-<?php if (isset($_GET['client_id'])) { echo "gray"; } else { echo nullable_htmlentities($config_theme); } ?> d-print-none">
+<aside class="main-sidebar sidebar-dark-<?php
+// ITFLOW_RENAME_FILES_SECTION_TO_DOCUMENTATION if (isset($_GET['client_id'])) { echo "gray"; } else { echo nullable_htmlentities($config_theme); } ?> d-print-none">
 
     <?php
     $is_internal_workspace_client_side_nav = !empty($config_internal_workspace_enable)
@@ -274,7 +275,7 @@ if ($rmm_deployments_table_sql && mysqli_num_rows($rmm_deployments_table_sql) > 
                         <a href="/agent/files.php?client_id=<?php echo $client_id; ?>" class="nav-link <?php if (basename($_SERVER["PHP_SELF"]) == "files.php") { echo "active"; } ?>">
                             <i class="nav-icon fas fa-folder"></i>
                             <p>
-                                Files
+                                Documentation
                                 <?php
                                 if ($num_files > 0) { ?>
                                     <span class="right badge text-light"><?php echo $num_files; ?></span>
