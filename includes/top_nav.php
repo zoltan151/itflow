@@ -152,6 +152,13 @@
     </div>
 </li>
 <!-- /ITFLOW_GLOBAL_QUICK_ADD_MENU -->
+<!-- ITFLOW_PLATFORM_ROADMAP_PHASE3B -->
+<li class="nav-item mr-2">
+    <a class="nav-link btn btn-outline-light btn-sm px-3 py-1" href="roadmap.php" title="Platform Roadmap">
+        <i class="fas fa-map-signs mr-1"></i><span class="d-none d-md-inline">Roadmap</span>
+    </a>
+</li>
+
 
 
         <form class="form-inline" action="/agent/global_search.php">
@@ -256,8 +263,3 @@
 </nav>
 <!-- /.navbar -->
 
-<!-- ITFLOW_PLATFORM_ROADMAP_PHASE3B -->
-        <a class="btn btn-outline-secondary btn-sm mr-2" href="roadmap.php" title="Platform Roadmap">
-            <i class="fas fa-map-signs mr-1"></i>Roadmap
-        </a>
-        
