@@ -17,7 +17,53 @@ if (version_compare(LATEST_DATABASE_VERSION, CURRENT_DATABASE_VERSION, '>')) {
 
     // We need updates!
 
-    if (CURRENT_DATABASE_VERSION == '0.2.0') {
+    
+if (CURRENT_DATABASE_VERSION == '2.4.4.51') {
+    // ITFLOW_PLATFORM_ROADMAP_PHASE3B
+    mysqli_query($mysqli, "CREATE TABLE IF NOT EXISTS `roadmap_items` (
+        `roadmap_item_id` int(11) NOT NULL AUTO_INCREMENT,
+        `roadmap_item_title` varchar(255) NOT NULL,
+        `roadmap_item_description` text DEFAULT NULL,
+        `roadmap_item_category` varchar(64) NOT NULL DEFAULT 'Other',
+        `roadmap_item_status` varchar(64) NOT NULL DEFAULT 'Backlog',
+        `roadmap_item_priority` varchar(64) NOT NULL DEFAULT 'Medium',
+        `roadmap_item_target_version` varchar(64) DEFAULT NULL,
+        `roadmap_item_notes` text DEFAULT NULL,
+        `roadmap_item_created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        `roadmap_item_updated_at` datetime DEFAULT NULL,
+        `roadmap_item_archived_at` datetime DEFAULT NULL,
+        `roadmap_item_created_by` int(11) NOT NULL DEFAULT 0,
+        `roadmap_item_updated_by` int(11) NOT NULL DEFAULT 0,
+        PRIMARY KEY (`roadmap_item_id`),
+        KEY `roadmap_item_status` (`roadmap_item_status`),
+        KEY `roadmap_item_category` (`roadmap_item_category`),
+        KEY `roadmap_item_priority` (`roadmap_item_priority`),
+        KEY `roadmap_item_archived_at` (`roadmap_item_archived_at`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $roadmap_seed_count = mysqli_fetch_assoc(mysqli_query($mysqli, "SELECT COUNT(*) AS count FROM `roadmap_items`"))['count'];
+
+    if (intval($roadmap_seed_count) == 0) {
+        mysqli_query($mysqli, "INSERT INTO `roadmap_items`
+            (`roadmap_item_title`, `roadmap_item_description`, `roadmap_item_category`, `roadmap_item_status`, `roadmap_item_priority`, `roadmap_item_created_by`)
+            VALUES
+            ('Universal Related Items', 'Generic relationship mapping between documents, assets, credentials, vendors, contacts, networks, tickets, and future flexible assets.', 'Documentation', 'Planned', 'Critical', 0),
+            ('Document Review / Expiration / Flags', 'Add ownership, review dates, expiration dates, stale documentation dashboards, and flagging workflows.', 'Documentation', 'Planned', 'High', 0),
+            ('Flexible Asset Types', 'Admin-defined structured documentation records with custom fields and relationship fields.', 'Documentation', 'Backlog', 'Critical', 0),
+            ('Ticket-to-Documentation Suggestions', 'Suggest relevant SOPs, credentials, diagrams, assets, and knowledge base entries inside tickets.', 'Automation', 'Backlog', 'High', 0),
+            ('Checklist / Runbook Templates', 'Reusable checklists and generated runbook bundles for onboarding, offboarding, incidents, and recurring work.', 'Documentation', 'Backlog', 'High', 0),
+            ('Domain and SSL Expiration Tracker', 'Track domain and certificate expirations with automated checks and renewal reminders.', 'Automation', 'Backlog', 'Medium', 0),
+            ('Password Vault Improvements', 'Improve credentials with stronger vault workflows, audit details, OTP support, password health, and rotation planning.', 'Credentials', 'Backlog', 'High', 0),
+            ('Client-Facing Documentation Portal', 'Client-friendly documentation and password access similar to a lightweight MyGlue-style portal.', 'Client Portal', 'Backlog', 'Medium', 0),
+            ('Integration / Auto-Documentation Engine', 'Auto-populate documentation from RMM, M365, network tools, backup systems, and other integrations.', 'Integrations', 'Backlog', 'High', 0),
+            ('AI Documentation Assistant', 'Assist with SOP creation, summarization, documentation cleanup, and ticket-to-knowledge conversion.', 'AI', 'Backlog', 'Medium', 0)");
+    }
+
+    mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.52'");
+}
+
+
+if (CURRENT_DATABASE_VERSION == '0.2.0') {
         //Insert queries here required to update to DB version 0.2.1
 
         mysqli_query($mysqli, "ALTER TABLE `vendors`

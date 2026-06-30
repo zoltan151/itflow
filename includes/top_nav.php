@@ -255,3 +255,9 @@
     </ul>
 </nav>
 <!-- /.navbar -->
+
+<!-- ITFLOW_PLATFORM_ROADMAP_PHASE3B -->
+        <a class="btn btn-outline-secondary btn-sm mr-2" href="roadmap.php" title="Platform Roadmap">
+            <i class="fas fa-map-signs mr-1"></i>Roadmap
+        </a>
+        
