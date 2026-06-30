@@ -5175,6 +5175,77 @@ END");
     }
 
 
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.53') {
+        // ITFLOW_ROADMAP_MSP_OPS_SEEDS_PHASE3D
+        mysqli_query($mysqli, "CREATE TABLE IF NOT EXISTS `roadmap_items` (
+            `roadmap_item_id` int(11) NOT NULL AUTO_INCREMENT,
+            `roadmap_item_title` varchar(255) NOT NULL,
+            `roadmap_item_description` text DEFAULT NULL,
+            `roadmap_item_category` varchar(64) NOT NULL DEFAULT 'Other',
+            `roadmap_item_status` varchar(64) NOT NULL DEFAULT 'Backlog',
+            `roadmap_item_priority` varchar(64) NOT NULL DEFAULT 'Medium',
+            `roadmap_item_target_version` varchar(64) DEFAULT NULL,
+            `roadmap_item_notes` text DEFAULT NULL,
+            `roadmap_item_created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `roadmap_item_updated_at` datetime DEFAULT NULL,
+            `roadmap_item_archived_at` datetime DEFAULT NULL,
+            `roadmap_item_created_by` int(11) NOT NULL DEFAULT 0,
+            `roadmap_item_updated_by` int(11) NOT NULL DEFAULT 0,
+            PRIMARY KEY (`roadmap_item_id`),
+            KEY `roadmap_item_status` (`roadmap_item_status`),
+            KEY `roadmap_item_category` (`roadmap_item_category`),
+            KEY `roadmap_item_priority` (`roadmap_item_priority`),
+            KEY `roadmap_item_archived_at` (`roadmap_item_archived_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        $ops_roadmap_items = [
+            ['SLA / Response Time Reporting', 'Track SLA targets, first response time, resolution time, breached tickets, and client-level service performance reporting.', 'Reporting', 'Backlog', 'High'],
+            ['Client QBR / Review Report Generator', 'Generate client review reports from tickets, assets, documentation health, security posture, backup status, roadmap items, and recommendations.', 'Reporting', 'Backlog', 'High'],
+            ['Asset Lifecycle / Warranty Tracker', 'Track purchase dates, warranty expirations, device age, lifecycle stage, replacement recommendations, and client budget planning.', 'Documentation', 'Backlog', 'High'],
+            ['License / Subscription Tracker', 'Track software subscriptions, license counts, renewal dates, costs, assigned users, and client billing impact.', 'Documentation', 'Backlog', 'High'],
+            ['Security Posture Dashboard', 'Central dashboard for MFA gaps, stale accounts, Bitdefender status, missing backups, weak documentation, exposed services, and other risk indicators.', 'Security', 'Backlog', 'Critical'],
+            ['Vendor / Account Management Improvements', 'Improve vendor records with account numbers, portals, renewal terms, support contacts, escalation paths, related credentials, and related documentation.', 'Documentation', 'Backlog', 'Medium'],
+            ['Credential Rotation Workflows', 'Scheduled password rotation reminders, owner assignment, rotation history, and rotation compliance reporting.', 'Security', 'Backlog', 'High'],
+            ['Client Standards / Baseline Policies', 'Define required standards per client or globally, then compare actual documentation, assets, configs, and integrations against those baselines.', 'Security', 'Backlog', 'High'],
+            ['Procurement / Quote Request Tracker', 'Track hardware and software requests, quote status, approvals, vendors, purchase dates, delivery status, and related tickets or projects.', 'Automation', 'Backlog', 'Medium'],
+            ['Project Template Engine', 'Reusable project templates for onboardings, M365 migrations, firewall installs, VoIP deployments, backup rollouts, and standard MSP projects.', 'Automation', 'Backlog', 'High'],
+            ['Internal SOP Training / Acknowledgement', 'Require employees to acknowledge important SOPs, track who has read what, and show stale or unacknowledged training items.', 'Documentation', 'Backlog', 'Medium'],
+            ['Technician Notes / Field Notes', 'Fast internal notes tied to clients, assets, contacts, tickets, networks, or credentials that can later be promoted into documentation.', 'Documentation', 'Backlog', 'Medium'],
+            ['Client Portal Improvement Roadmap', 'Improve client-facing ticket views, documentation visibility, approvals, request forms, onboarding/offboarding requests, and secure password or document sharing.', 'Client Portal', 'Backlog', 'High'],
+            ['Forms / Request Intake Builder', 'Custom forms for onboarding, access requests, equipment requests, terminations, vendor access, new site requests, and change approvals.', 'Automation', 'Backlog', 'High'],
+            ['Approval Workflows', 'Client approvals, internal approvals, change approvals, purchasing approvals, security exception approvals, and approval history tracking.', 'Automation', 'Backlog', 'High'],
+            ['Maintenance Windows / Scheduled Work', 'Track planned maintenance, impacted clients and assets, related tickets, rollback plans, completion notes, and client notifications.', 'Automation', 'Backlog', 'Medium'],
+            ['Incident Management', 'Dedicated incident records with timeline, affected clients, root cause, communications, linked tickets, resolution, and postmortem documentation.', 'Automation', 'Backlog', 'High'],
+            ['Knowledge Base Article Suggestions', 'Detect repeated tickets and suggest creating or updating SOPs, client documentation, internal KB articles, or troubleshooting runbooks.', 'AI', 'Backlog', 'Medium'],
+            ['Duplicate / Stale Data Cleanup Tools', 'Find duplicate contacts, stale assets, old credentials, abandoned documents, duplicate vendors, unused records, and cleanup candidates.', 'Automation', 'Backlog', 'Medium'],
+            ['Data Quality Rules Engine', 'Admin-defined documentation rules such as every client must have ISP info, every firewall must have credentials, or every M365 client must have tenant ID documented.', 'Reporting', 'Backlog', 'Critical']
+        ];
+
+        foreach ($ops_roadmap_items as $item) {
+            $title = mysqli_real_escape_string($mysqli, $item[0]);
+            $description = mysqli_real_escape_string($mysqli, $item[1]);
+            $category = mysqli_real_escape_string($mysqli, $item[2]);
+            $status = mysqli_real_escape_string($mysqli, $item[3]);
+            $priority = mysqli_real_escape_string($mysqli, $item[4]);
+
+            $existing_item = mysqli_query($mysqli, "SELECT roadmap_item_id FROM roadmap_items WHERE roadmap_item_title = '$title' LIMIT 1");
+
+            if ($existing_item && mysqli_num_rows($existing_item) == 0) {
+                mysqli_query($mysqli, "INSERT INTO roadmap_items SET
+                    roadmap_item_title = '$title',
+                    roadmap_item_description = '$description',
+                    roadmap_item_category = '$category',
+                    roadmap_item_status = '$status',
+                    roadmap_item_priority = '$priority',
+                    roadmap_item_created_by = 0");
+            }
+        }
+
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.54'");
+    }
+
+
 }
 
 
