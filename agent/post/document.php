@@ -1,4 +1,5 @@
 <?php
+// ITFLOW_DOCUMENT_TYPES_PHASE2A
 
 /*
  * ITFlow - GET/POST request handler for client documents
@@ -20,7 +21,7 @@ if (isset($_POST['add_document'])) {
     enforceClientAccess();
 
     // Document add query
-    mysqli_query($mysqli,"INSERT INTO documents SET document_name = '$name', document_description = '$description', document_content = '', document_content_raw = '$content_raw', document_folder_id = $folder, document_created_by = $session_user_id, document_client_id = $client_id");
+    mysqli_query($mysqli,"INSERT INTO documents SET document_name = '$name', document_description = '$description', document_type = '$document_type', document_content = '', document_content_raw = '$content_raw', document_folder_id = $folder, document_created_by = $session_user_id, document_client_id = $client_id");
 
     $document_id = mysqli_insert_id($mysqli);
 
@@ -62,7 +63,29 @@ if (isset($_POST['add_document_from_template'])) {
     $client_id             = intval($_POST['client_id']);
     $document_name         = sanitizeInput($_POST['name']);
     $document_description  = sanitizeInput($_POST['description']);
+    $document_type         = sanitizeInput($_POST['document_type'] ?? 'General');
     $document_template_id  = intval($_POST['document_template_id']);
+
+    $document_type_options = [
+        'General',
+        'SOP',
+        'Client SOP',
+        'Runbook',
+        'Onboarding',
+        'Offboarding',
+        'Network Diagram',
+        'Diagram / Whiteboard',
+        'Process Map',
+        'Mind Map',
+        'Planner',
+        'Timeline',
+        'Internal KB',
+        'Other',
+    ];
+
+    if (!in_array($document_type, $document_type_options, true)) {
+        $document_type = 'General';
+    }
     $folder                = intval($_POST['folder']);
 
     enforceClientAccess();
@@ -85,6 +108,7 @@ if (isset($_POST['add_document_from_template'])) {
         "INSERT INTO documents SET
             document_name        = '$document_name',
             document_description = '$document_description',
+            document_type        = '$document_type',
             document_content     = '',
             document_content_raw = '',
             document_folder_id   = $folder,
@@ -222,6 +246,7 @@ if (isset($_POST['edit_document'])) {
         "UPDATE documents SET
             document_name        = '$name',
             document_description = '$description',
+            document_type        = '$document_type',
             document_content     = '$content',
             document_content_raw = '$content_raw',
             document_updated_by  = $session_user_id

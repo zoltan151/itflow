@@ -1,4 +1,5 @@
 <?php
+// ITFLOW_DOCUMENT_TYPES_PHASE2A
 // ITFLOW_RENAME_FILES_SECTION_TO_DOCUMENTATION
 
 require_once "includes/inc_all_client.php";
@@ -36,6 +37,7 @@ $row = mysqli_fetch_assoc($sql_document);
 $folder_name = nullable_htmlentities($row['folder_name']);
 $document_name = nullable_htmlentities($row['document_name']);
 $document_description = nullable_htmlentities($row['document_description']);
+$document_type = nullable_htmlentities($row['document_type'] ?? 'General');
 $document_content = $purifier->purify($row['document_content']);
 $document_created_by_id = intval($row['document_created_by']);
 $document_created_by_name = nullable_htmlentities($row['user_name']);
@@ -107,7 +109,12 @@ $page_title = $row['document_name'];
             <div class="card-header bg-dark">
                 <div class="row">
                     <div class="col">
-                        <div class="h4 mb-0"><?= $document_name ?></div>
+                        <div class="h4 mb-0">
+                            <?= $document_name ?>
+                            <?php if (!empty($document_type) && $document_type !== 'General') { ?>
+                                <span class="badge badge-info ml-2 align-middle" title="Document Type"><i class="fa fa-fw fa-tag mr-1"></i><?= $document_type ?></span><!-- ITFLOW_DOCUMENT_TYPE_BADGE_DETAILS -->
+                            <?php } ?>
+                        </div>
                         <?php if ($document_description) { ?>
                         <div class="text-light"><?= $document_description ?></div>
                         <?php } ?>

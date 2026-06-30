@@ -1,4 +1,5 @@
 <?php
+// ITFLOW_DOCUMENT_TYPES_PHASE2A
 // ITFLOW_RENAME_FILES_SECTION_TO_DOCUMENTATION
 
 // Unified sort: "name" is logical field, not DB column
@@ -363,6 +364,7 @@ if ($view == 1) {
         $document_id              = intval($row['document_id']);
         $document_name            = nullable_htmlentities($row['document_name']);
         $document_description     = nullable_htmlentities($row['document_description']);
+        $document_type            = nullable_htmlentities($row['document_type'] ?? 'General');
         $document_created_by_name = nullable_htmlentities($row['user_name']);
         $document_created_at      = $row['document_created_at'];
         $document_updated_at      = $row['document_updated_at'];
@@ -373,6 +375,7 @@ if ($view == 1) {
             'id'                => $document_id,
             'name'              => $document_name,
             'description'       => $document_description,
+            'document_type'     => $document_type,
             'mime'              => 'Document',
             'size'              => null,
             'updated_at'        => $document_updated_at,
@@ -837,6 +840,7 @@ $num_root_items = intval($row_root_files['num']) + intval($row_root_docs['num'])
                                         $document_id              = $item['id'];
                                         $document_name            = $item['name'];
                                         $document_description     = $item['description'];
+                                        $document_type            = $item['document_type'] ?? 'General';
                                         $document_created_by_name = $item['created_by'];
                                         $document_created_at      = date("m/d/Y", strtotime($item['updated_at']));
                                         //$document_updated_at      = date("m/d/Y", strtotime($item['updated_at']));
@@ -873,6 +877,9 @@ $num_root_items = intval($row_root_files['num']) + intval($row_root_docs['num'])
                                                         <div class="media-body">
                                                             <p>
                                                                 <?php echo $document_name; ?>
+                                                                <?php if (!empty($document_type) && $document_type !== 'General') { ?>
+                                                                    <span class="badge badge-info ml-2" title="Document Type"><i class="fa fa-fw fa-tag mr-1"></i><?php echo $document_type; ?></span><!-- ITFLOW_DOCUMENT_TYPE_BADGE_LIST -->
+                                                                <?php } ?>
                                                                 <br>
                                                                 <small class="text-secondary"><?php echo $document_description; ?></small>
                                                             </p>

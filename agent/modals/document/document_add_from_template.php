@@ -1,4 +1,5 @@
 <?php
+// ITFLOW_DOCUMENT_TYPES_PHASE2A
 
 require_once '../../../includes/modal_header.php';
 
@@ -6,6 +7,8 @@ $client_id = intval($_GET['client_id'] ?? 0);
 $contact_id = intval($_GET['contact_id'] ?? 0);
 $asset_id = intval($_GET['asset_id'] ?? 0);
 intval($_GET['folder_id'] ?? 0);
+
+$document_type = 'General';
 
 ob_start();
 
@@ -53,6 +56,46 @@ ob_start();
                 <input type="text" class="form-control" name="name" placeholder="Name" required>
             </div>
         </div>
+
+        <?php
+        $document_type_options = [
+            'General' => ['label' => 'General', 'icon' => 'fa-file-alt', 'class' => 'secondary'],
+            'SOP' => ['label' => 'SOP', 'icon' => 'fa-clipboard-list', 'class' => 'primary'],
+            'Client SOP' => ['label' => 'Client SOP', 'icon' => 'fa-clipboard-check', 'class' => 'primary'],
+            'Runbook' => ['label' => 'Runbook', 'icon' => 'fa-list-ol', 'class' => 'info'],
+            'Onboarding' => ['label' => 'Onboarding', 'icon' => 'fa-user-plus', 'class' => 'success'],
+            'Offboarding' => ['label' => 'Offboarding', 'icon' => 'fa-user-minus', 'class' => 'warning'],
+            'Network Diagram' => ['label' => 'Network Diagram', 'icon' => 'fa-network-wired', 'class' => 'dark'],
+            'Diagram / Whiteboard' => ['label' => 'Diagram / Whiteboard', 'icon' => 'fa-project-diagram', 'class' => 'dark'],
+            'Process Map' => ['label' => 'Process Map', 'icon' => 'fa-sitemap', 'class' => 'info'],
+            'Mind Map' => ['label' => 'Mind Map', 'icon' => 'fa-brain', 'class' => 'info'],
+            'Planner' => ['label' => 'Planner', 'icon' => 'fa-tasks', 'class' => 'success'],
+            'Timeline' => ['label' => 'Timeline', 'icon' => 'fa-stream', 'class' => 'purple'],
+            'Internal KB' => ['label' => 'Internal KB', 'icon' => 'fa-book', 'class' => 'secondary'],
+            'Other' => ['label' => 'Other', 'icon' => 'fa-file', 'class' => 'secondary'],
+        ];
+        
+        if (!isset($document_type) || !isset($document_type_options[$document_type])) {
+            $document_type = 'General';
+        }
+        ?>
+        <div class="form-group">
+            <label>Document Type</label>
+            <div class="input-group">
+                <div class="input-group-prepend">
+                    <span class="input-group-text"><i class="fa fa-fw fa-tags"></i></span>
+                </div>
+                <select class="form-control select2" name="document_type">
+                    <?php foreach ($document_type_options as $document_type_key => $document_type_meta) { ?>
+                        <option value="<?= nullable_htmlentities($document_type_key) ?>" <?php if ($document_type === $document_type_key) { echo 'selected'; } ?>>
+                            <?= nullable_htmlentities($document_type_meta['label']) ?>
+                        </option>
+                    <?php } ?>
+                </select>
+            </div>
+        </div>
+        <?php
+        ?>
 
         <label>Description</label>
         <div class="form-group">
