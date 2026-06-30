@@ -1,6 +1,7 @@
 <?php
 // ITFLOW_PLATFORM_ROADMAP_PHASE3B
 // ITFLOW_ROADMAP_PHASE3E_PLANNING_FIELDS
+// ITFLOW_ROADMAP_DROPDOWN_FIX
 
 require_once "includes/inc_all.php";
 
@@ -427,9 +428,16 @@ $sql_roadmap_items = mysqli_query(
                                 </h5>
 
                                 <?php if (lookupUserPermission("module_config") >= 2) { ?>
-                                    <div class="dropdown">
-                                        <button class="btn btn-sm btn-light" type="button" data-toggle="dropdown">
+                                    <div class="btn-group itflow-roadmap-card-actions">
+                                        <button type="button"
+                                            class="btn btn-sm btn-light dropdown-toggle itflow-roadmap-action-toggle"
+                                            data-toggle="dropdown"
+                                            data-boundary="viewport"
+                                            aria-haspopup="true"
+                                            aria-expanded="false"
+                                            title="Roadmap item actions">
                                             <i class="fas fa-ellipsis-v"></i>
+                                            <span class="sr-only">Roadmap item actions</span>
                                         </button>
                                         <div class="dropdown-menu dropdown-menu-right">
                                             <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/roadmap/roadmap_edit.php?id=<?= $roadmap_item_id ?>" data-modal-size="lg">
@@ -535,5 +543,58 @@ $sql_roadmap_items = mysqli_query(
         </div>
     </div>
 </div>
+
+<!-- ITFLOW_ROADMAP_DROPDOWN_FIX_FALLBACK -->
+
+<style>
+    .itflow-roadmap-card-actions .dropdown-menu {
+        z-index: 2050;
+    }
+
+    .itflow-roadmap-action-toggle::after {
+        display: none;
+    }
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    document.addEventListener('click', function (event) {
+        var toggle = event.target.closest('.itflow-roadmap-action-toggle');
+
+        if (!toggle) {
+            document.querySelectorAll('.itflow-roadmap-card-actions .dropdown-menu.show').forEach(function (menu) {
+                menu.classList.remove('show');
+            });
+
+            document.querySelectorAll('.itflow-roadmap-action-toggle[aria-expanded="true"]').forEach(function (button) {
+                button.setAttribute('aria-expanded', 'false');
+            });
+
+            return;
+        }
+
+        var actions = toggle.closest('.itflow-roadmap-card-actions');
+        var menu = actions ? actions.querySelector('.dropdown-menu') : null;
+
+        if (!menu || (window.jQuery && typeof window.jQuery.fn.dropdown === 'function')) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        document.querySelectorAll('.itflow-roadmap-card-actions .dropdown-menu.show').forEach(function (openMenu) {
+            if (openMenu !== menu) {
+                openMenu.classList.remove('show');
+            }
+        });
+
+        var shouldOpen = !menu.classList.contains('show');
+        menu.classList.toggle('show', shouldOpen);
+        toggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+    }, true);
+});
+</script>
+
 
 <?php require_once "includes/footer.php"; ?>
