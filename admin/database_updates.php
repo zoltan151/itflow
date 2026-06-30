@@ -5289,6 +5289,82 @@ END");
     }
 
 
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.55') {
+        // ITFLOW_ROADMAP_ADDITIONAL_IDEAS_PHASE3F
+        mysqli_query($mysqli, "CREATE TABLE IF NOT EXISTS `roadmap_items` (
+            `roadmap_item_id` int(11) NOT NULL AUTO_INCREMENT,
+            `roadmap_item_title` varchar(255) NOT NULL,
+            `roadmap_item_description` text DEFAULT NULL,
+            `roadmap_item_category` varchar(64) NOT NULL DEFAULT 'Other',
+            `roadmap_item_status` varchar(64) NOT NULL DEFAULT 'Backlog',
+            `roadmap_item_priority` varchar(64) NOT NULL DEFAULT 'Medium',
+            `roadmap_item_target_version` varchar(64) DEFAULT NULL,
+            `roadmap_item_notes` text DEFAULT NULL,
+            `roadmap_item_created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `roadmap_item_updated_at` datetime DEFAULT NULL,
+            `roadmap_item_archived_at` datetime DEFAULT NULL,
+            `roadmap_item_created_by` int(11) NOT NULL DEFAULT 0,
+            `roadmap_item_updated_by` int(11) NOT NULL DEFAULT 0,
+            `roadmap_item_owner_id` int(11) NOT NULL DEFAULT 0,
+            `roadmap_item_effort` varchar(32) NOT NULL DEFAULT 'Medium',
+            `roadmap_item_impact` varchar(32) NOT NULL DEFAULT 'Medium',
+            `roadmap_item_complexity` varchar(32) NOT NULL DEFAULT 'Medium',
+            `roadmap_item_sort_order` int(11) NOT NULL DEFAULT 0,
+            `roadmap_item_pinned` tinyint(1) NOT NULL DEFAULT 0,
+            `roadmap_item_dependencies` text DEFAULT NULL,
+            PRIMARY KEY (`roadmap_item_id`),
+            KEY `roadmap_item_status` (`roadmap_item_status`),
+            KEY `roadmap_item_category` (`roadmap_item_category`),
+            KEY `roadmap_item_priority` (`roadmap_item_priority`),
+            KEY `roadmap_item_archived_at` (`roadmap_item_archived_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        $additional_roadmap_items = [
+            ['UrBackup Integration', 'Integrate with the self-hosted UrBackup server to sync clients, protected systems, backup status, backup age, failures, restore points, and backup-related alerts into ITFlow.', 'Integrations', 'Backlog', 'High', 'Medium', 'High', 'Medium'],
+            ['Interactive Tray Agent / Endpoint Assistant', 'Deploy an interactive workstation and server tray agent with live status, alerts, maintenance warnings, submit-ticket workflow, reports, and an AI helpdesk chatbot that can use ITFlow documentation and KB context.', 'Automation', 'Backlog', 'Critical', 'Large', 'Critical', 'Very High'],
+            ['Improved Dashboards', 'Improve ITFlow dashboards with better executive summaries, operational widgets, client health views, documentation health, security posture, ticket trends, alerts, and technician workload views.', 'Reporting', 'Backlog', 'High', 'Large', 'High', 'High'],
+            ['Billing and Merchant Processor Integrations', 'Integrate billing, accounting, payment, and merchant processor platforms to sync invoices, payments, transaction status, failed payments, billing alerts, and client financial context.', 'Integrations', 'Backlog', 'High', 'Large', 'High', 'High'],
+            ['Inventory Replenishment Tracking and Auto Tickets', 'Track client spare inventory thresholds for workstations, monitors, peripherals, adapters, and other equipment; alert and auto-create tickets when stock drops below replenishment thresholds.', 'Automation', 'Backlog', 'High', 'Large', 'High', 'High'],
+            ['Suggestion Box', 'Add a lightweight suggestion box for admins, technicians, and optionally clients to submit product ideas, workflow improvements, pain points, and roadmap candidates.', 'Automation', 'Backlog', 'Medium', 'Small', 'Medium', 'Low'],
+            ['App and SaaS Discovery / Governance', 'Discover and govern client SaaS usage, app access, shadow IT, user assignments, license usage, risky apps, stale users, and app approval workflows.', 'Security', 'Backlog', 'High', 'Large', 'High', 'High'],
+            ['Shared MFA as a Service', 'Build managed shared MFA workflows for client/vendor accounts with access controls, auditing, approval flow, ownership, rotation, and secure technician access.', 'Security', 'Backlog', 'Critical', 'Large', 'Critical', 'High'],
+            ['Proposal and Quote Generator', 'Generate client proposals, quotes, scopes of work, hardware/software bundles, optional line items, approval links, and conversion into projects or tickets.', 'Automation', 'Backlog', 'High', 'Large', 'High', 'High'],
+            ['Forms and Templates Builder', 'Create reusable forms and templates for onboarding, offboarding, access requests, equipment requests, security exceptions, change approvals, documentation, and repeatable projects.', 'Automation', 'Backlog', 'High', 'Large', 'High', 'Medium'],
+            ['AI-Assisted Ticket Triage and Resolution', 'Use AI to categorize tickets, suggest tasks, recommend KB/SOP links, prompt technicians, automate approved actions, and safely resolve eligible issues through agentic automation.', 'AI', 'Backlog', 'Critical', 'XL', 'Critical', 'Very High'],
+            ['n8n Workflow Automation Integration', 'Integrate ITFlow with n8n or similar workflow engines to trigger automations, approval flows, external syncs, notifications, remediation actions, and cross-platform business workflows.', 'Integrations', 'Backlog', 'High', 'Medium', 'High', 'Medium']
+        ];
+
+        foreach ($additional_roadmap_items as $item) {
+            $title = mysqli_real_escape_string($mysqli, $item[0]);
+            $description = mysqli_real_escape_string($mysqli, $item[1]);
+            $category = mysqli_real_escape_string($mysqli, $item[2]);
+            $status = mysqli_real_escape_string($mysqli, $item[3]);
+            $priority = mysqli_real_escape_string($mysqli, $item[4]);
+            $effort = mysqli_real_escape_string($mysqli, $item[5]);
+            $impact = mysqli_real_escape_string($mysqli, $item[6]);
+            $complexity = mysqli_real_escape_string($mysqli, $item[7]);
+
+            $existing_item = mysqli_query($mysqli, "SELECT roadmap_item_id FROM roadmap_items WHERE roadmap_item_title = '$title' LIMIT 1");
+
+            if ($existing_item && mysqli_num_rows($existing_item) == 0) {
+                mysqli_query($mysqli, "INSERT INTO roadmap_items SET
+                    roadmap_item_title = '$title',
+                    roadmap_item_description = '$description',
+                    roadmap_item_category = '$category',
+                    roadmap_item_status = '$status',
+                    roadmap_item_priority = '$priority',
+                    roadmap_item_effort = '$effort',
+                    roadmap_item_impact = '$impact',
+                    roadmap_item_complexity = '$complexity',
+                    roadmap_item_created_by = 0");
+            }
+        }
+
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.56'");
+    }
+
+
 }
 
 
