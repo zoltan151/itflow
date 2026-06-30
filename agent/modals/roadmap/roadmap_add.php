@@ -2,7 +2,7 @@
 // ITFLOW_PLATFORM_ROADMAP_PHASE3B
 // ITFLOW_ROADMAP_PHASE3E_PLANNING_FIELDS
 
-require_once "../includes/inc_all_modal.php";
+require_once "../../includes/inc_all_modal.php";
 
 enforceUserPermission('module_config', 2);
 

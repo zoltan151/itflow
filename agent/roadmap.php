@@ -3,6 +3,7 @@
 // ITFLOW_ROADMAP_PHASE3E_PLANNING_FIELDS
 // ITFLOW_ROADMAP_DROPDOWN_FIX
 // ITFLOW_ROADMAP_QUICK_PIN_EDIT_FIX
+// ITFLOW_ROADMAP_EDIT_MODAL_500_FIX
 
 require_once "includes/inc_all.php";
 
@@ -455,7 +456,7 @@ $sql_roadmap_items = mysqli_query(
                                             <span class="sr-only">Roadmap item actions</span>
                                         </button>
                                         <div class="dropdown-menu dropdown-menu-right">
-                                            <a class="dropdown-item ajax-modal itflow-roadmap-edit-action" href="modals/roadmap/roadmap_edit.php?id=<?= $roadmap_item_id ?>" data-modal-url="modals/roadmap/roadmap_edit.php?id=<?= $roadmap_item_id ?>" data-modal-size="lg">
+                                            <a class="dropdown-item ajax-modal itflow-roadmap-edit-action" href="#" data-modal-url="modals/roadmap/roadmap_edit.php?id=<?= $roadmap_item_id ?>" data-modal-size="lg">
                                                 <i class="fas fa-edit fa-fw mr-2"></i>Edit
                                             </a>
                                             <?php if (!$archived_at) { ?>
@@ -628,44 +629,37 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        if (editLink.dataset.itflowRoadmapFallbackBound === '1') {
+        var modalUrl = editLink.getAttribute('data-modal-url');
+
+        if (!modalUrl) {
             return;
         }
 
-        var modalUrl = editLink.getAttribute('data-modal-url') || editLink.getAttribute('href');
+        event.preventDefault();
+        event.stopPropagation();
 
-        if (!modalUrl || modalUrl === '#') {
+        if (!window.jQuery) {
             return;
         }
 
-        setTimeout(function () {
-            var visibleModal = document.querySelector('.modal.show');
+        window.jQuery.get(modalUrl, function (html) {
+            var container = window.jQuery('#itflowRoadmapModalFallbackContainer');
 
-            if (visibleModal) {
-                return;
+            if (!container.length) {
+                container = window.jQuery('<div id="itflowRoadmapModalFallbackContainer"></div>').appendTo('body');
             }
 
-            if (!window.jQuery) {
-                return;
+            container.html(html);
+
+            var modal = container.find('.modal').first();
+
+            if (modal.length) {
+                modal.modal('show');
             }
-
-            window.jQuery.get(modalUrl, function (html) {
-                var container = window.jQuery('#itflowRoadmapModalFallbackContainer');
-
-                if (!container.length) {
-                    container = window.jQuery('<div id="itflowRoadmapModalFallbackContainer"></div>').appendTo('body');
-                }
-
-                container.html(html);
-
-                var modal = container.find('.modal').first();
-
-                if (modal.length) {
-                    modal.modal('show');
-                }
-            });
-        }, 250);
-    }, false);
+        }).fail(function (xhr) {
+            alert('Unable to load roadmap edit modal. HTTP ' + xhr.status);
+        });
+    }, true);
 });
 </script>
 
