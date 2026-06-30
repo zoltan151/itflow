@@ -895,6 +895,38 @@ $(document).on('change', '#ticket_template_select', function () {
         }
     }
 
+    // ITFLOW_NEW_TICKET_SUBMIT_ACTION_PRESERVE
+    function preserveSubmitButtonAction(form, button) {
+        var actionName = 'add_ticket';
+        var actionValue = '1';
+
+        if (button && button.name) {
+            actionName = button.name;
+            actionValue = button.value || '1';
+        }
+
+        if (!form.querySelector('input[type="hidden"][data-itflow-submit-action-preserve="1"][name="' + actionName + '"]')) {
+            var input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = actionName;
+            input.value = actionValue;
+            input.setAttribute('data-itflow-submit-action-preserve', '1');
+            form.appendChild(input);
+        }
+    }
+
+    function submitValidatedNewTicketForm(form, button) {
+        preserveSubmitButtonAction(form, button);
+        form.setAttribute('data-itflow-new-ticket-validation-passed', '1');
+
+        /*
+         * form.submit() intentionally bypasses submit event handlers.
+         * That is fine here because our validation has already passed.
+         * The important part is preserving add_ticket, because PHP post.php routes on that submit name.
+         */
+        form.submit();
+    }
+
     function validateNewTicketForm(modal, form) {
         if (window.tinymce && typeof window.tinymce.triggerSave === 'function') {
             window.tinymce.triggerSave();
@@ -969,8 +1001,7 @@ $(document).on('change', '#ticket_template_select', function () {
             event.stopPropagation();
 
             if (validateNewTicketForm(modal, form)) {
-                form.setAttribute('data-itflow-new-ticket-validation-passed', '1');
-                form.submit();
+                submitValidatedNewTicketForm(form, null);
             }
         }, true);
 
@@ -984,8 +1015,7 @@ $(document).on('change', '#ticket_template_select', function () {
                 event.stopPropagation();
 
                 if (validateNewTicketForm(modal, form)) {
-                    form.setAttribute('data-itflow-new-ticket-validation-passed', '1');
-                    form.submit();
+                    submitValidatedNewTicketForm(form, button);
                 }
             }, true);
         });
