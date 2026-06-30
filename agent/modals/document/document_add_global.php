@@ -2,6 +2,10 @@
 
 require_once '../../../includes/modal_header.php';
 
+// ITFLOW_GLOBAL_NEW_DOCUMENT_OB_START_FIX
+// modal_footer.php expects modal body output to be buffered, matching the standard modal pattern.
+ob_start();
+
 ?>
 
 <div class="modal-header bg-dark">
