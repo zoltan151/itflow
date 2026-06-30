@@ -72,11 +72,32 @@
     letter-spacing: 0.03em;
     text-transform: uppercase;
 }
+
+/* ITFLOW_QUICK_ADD_ICON_CONTENT_STYLE */
+/* Treat the plus as an icon with real spacing, not cramped text. */
+.itflow-quick-add-content {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-weight: 700;
+}
+
+.itflow-quick-add-plus-icon {
+    font-size: 0.95rem;
+    line-height: 1;
+    font-weight: 900;
+    -webkit-text-stroke: 0.45px currentColor;
+    transform: translateY(-0.02em);
+}
+
+.itflow-quick-add-label {
+    line-height: 1;
+}
 </style>
 
 <li class="nav-item dropdown" id="itflowGlobalQuickAdd">
     <a class="nav-link btn btn-success btn-sm px-3 py-1 dropdown-toggle" href="#" id="itflowGlobalQuickAddDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" title="Quick Add">
-        <i class="fas fa-plus mr-1"></i><span class="d-none d-md-inline">New</span>
+        <span class="itflow-quick-add-content" data-itflow-marker="ITFLOW_QUICK_ADD_ICON_CONTENT"><i class="fas fa-plus itflow-quick-add-plus-icon" aria-hidden="true"></i><span class="itflow-quick-add-label d-none d-md-inline">New</span></span>
     </a>
     <div class="dropdown-menu dropdown-menu-left shadow" aria-labelledby="itflowGlobalQuickAddDropdown">
         <h6 class="dropdown-header">Quick Add</h6>
