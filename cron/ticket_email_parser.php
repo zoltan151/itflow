@@ -29,23 +29,53 @@ require_once "../functions.php";
 require_once "../includes/load_global_settings.php";
 
 
-// ITFLOW_EMAIL_REPLY_REOPEN_ACTIVITY_LOG
-if (!function_exists('itflowLogEmailReplyTicketReopen')) {
-    function itflowLogEmailReplyTicketReopen($ticket_id, $client_id = 0, $previous_status = '')
+// ITFLOW_EMAIL_REPLY_STATUS_ACTIVITY_LOG
+if (!function_exists('itflowIsReopenCandidateStatusName')) {
+    function itflowIsReopenCandidateStatusName($status_name)
+    {
+        $status_name = strtolower(trim((string)$status_name));
+
+        if ($status_name === '') {
+            return false;
+        }
+
+        $reopen_candidate_statuses = [
+            'resolved',
+            'complete',
+            'completed',
+            'done',
+            'fixed',
+            'solved'
+        ];
+
+        foreach ($reopen_candidate_statuses as $candidate) {
+            if (strpos($status_name, $candidate) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
+if (!function_exists('itflowLogEmailReplyTicketStatusActivity')) {
+    function itflowLogEmailReplyTicketStatusActivity($ticket_id, $client_id = 0, $previous_status = '', $new_status = '')
     {
         global $mysqli;
 
         $ticket_id = intval($ticket_id);
         $client_id = intval($client_id);
         $previous_status = trim((string)$previous_status);
+        $new_status = trim((string)$new_status);
 
         if ($ticket_id <= 0 || !isset($mysqli)) {
             return;
         }
 
-        static $itflow_logged_email_reopens = [];
+        static $itflow_logged_email_status_changes = [];
 
-        if (isset($itflow_logged_email_reopens[$ticket_id])) {
+        $dedupe_key = $ticket_id . '|' . strtolower($previous_status) . '|' . strtolower($new_status);
+        if (isset($itflow_logged_email_status_changes[$dedupe_key])) {
             return;
         }
 
@@ -70,20 +100,29 @@ if (!function_exists('itflowLogEmailReplyTicketReopen')) {
             $ticket_label = (string)$ticket_id;
         }
 
-        $previous_status_message = '';
-        if ($previous_status !== '') {
-            $previous_status_message = " Previous status: $previous_status.";
+        $action = itflowIsReopenCandidateStatusName($previous_status) ? 'Reopen' : 'Status Change';
+
+        if ($new_status === '') {
+            $new_status = 'the configured reply target status';
         }
 
-        $message = "Ticket #$ticket_label was automatically reopened because a customer replied by email.$previous_status_message";
+        if ($previous_status !== '') {
+            $message = "Email parser: Ticket #$ticket_label was automatically moved from $previous_status to $new_status because a customer replied by email.";
+        } else {
+            $message = "Email parser: Ticket #$ticket_label was automatically moved to $new_status because a customer replied by email.";
+        }
+
+        if ($action === 'Reopen') {
+            $message = "Email parser: Ticket #$ticket_label was automatically reopened because a customer replied by email. Status changed from $previous_status to $new_status.";
+        }
 
         if ($ticket_subject !== '') {
             $message .= " Subject: $ticket_subject";
         }
 
         if (function_exists('logAction')) {
-            logAction("Ticket", "Reopen", $message, $client_id, $ticket_id);
-            $itflow_logged_email_reopens[$ticket_id] = true;
+            logAction("Ticket", $action, $message, $client_id, $ticket_id);
+            $itflow_logged_email_status_changes[$dedupe_key] = true;
             return;
         }
 
@@ -106,7 +145,7 @@ if (!function_exists('itflowLogEmailReplyTicketReopen')) {
             $insert['log_type'] = 'Ticket';
         }
         if (isset($columns['log_action'])) {
-            $insert['log_action'] = 'Reopen';
+            $insert['log_action'] = $action;
         }
         if (isset($columns['log_description'])) {
             $insert['log_description'] = $message;
@@ -134,53 +173,17 @@ if (!function_exists('itflowLogEmailReplyTicketReopen')) {
 
         mysqli_query($mysqli, "INSERT INTO logs SET " . implode(", ", $sets));
 
-        $itflow_logged_email_reopens[$ticket_id] = true;
+        $itflow_logged_email_status_changes[$dedupe_key] = true;
     }
 }
 
-
-
-
-
-// ITFLOW_EMAIL_REPLY_REOPEN_ACTIVITY_GUARD
-if (!function_exists('itflowShouldLogEmailReplyTicketReopen')) {
-    function itflowShouldLogEmailReplyTicketReopen($previous_status_id, $new_status_id)
+if (!function_exists('itflowShouldLogEmailReplyTicketStatusActivity')) {
+    function itflowShouldLogEmailReplyTicketStatusActivity($previous_status_id, $new_status_id)
     {
         $previous_status_id = intval($previous_status_id);
         $new_status_id = intval($new_status_id);
 
-        if ($previous_status_id <= 0 || $new_status_id <= 0 || $previous_status_id === $new_status_id) {
-            return false;
-        }
-
-        $previous_status_name = '';
-
-        if (function_exists('parserGetTicketStatusNameById')) {
-            $previous_status_name = strtolower(trim((string)parserGetTicketStatusNameById($previous_status_id)));
-        }
-
-        if ($previous_status_name === '') {
-            return false;
-        }
-
-        // Only log a true reopen when the previous state was a resolved/completed-style state.
-        // Do not log this for normal client replies on already-open/in-progress tickets.
-        $reopen_candidate_statuses = [
-            'resolved',
-            'complete',
-            'completed',
-            'done',
-            'fixed',
-            'solved'
-        ];
-
-        foreach ($reopen_candidate_statuses as $candidate) {
-            if (strpos($previous_status_name, $candidate) !== false) {
-                return true;
-            }
-        }
-
-        return false;
+        return $previous_status_id > 0 && $new_status_id > 0 && $previous_status_id !== $new_status_id;
     }
 }
 
@@ -873,8 +876,8 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
             mysqli_query($mysqli, "UPDATE tickets SET ticket_status = $reply_target_status_id, ticket_resolved_at = NULL WHERE ticket_id = $ticket_id AND ticket_client_id = $client_id LIMIT 1");
             $status_changed_to_reply_target = ($reply_target_status_id > 0 && $previous_ticket_status_id !== $reply_target_status_id);
 
-            if ($status_changed_to_reply_target && itflowShouldLogEmailReplyTicketReopen($previous_ticket_status_id, $reply_target_status_id)) {
-                itflowLogEmailReplyTicketReopen($ticket_id, $client_id, parserGetTicketStatusNameById($previous_ticket_status_id)); // ITFLOW_EMAIL_REPLY_REOPEN_ACTIVITY_LOG_CALL
+            if ($status_changed_to_reply_target && itflowShouldLogEmailReplyTicketStatusActivity($previous_ticket_status_id, $reply_target_status_id)) {
+                itflowLogEmailReplyTicketStatusActivity($ticket_id, $client_id, parserGetTicketStatusNameById($previous_ticket_status_id), $reply_target_status_name); // ITFLOW_EMAIL_REPLY_STATUS_ACTIVITY_LOG_CALL
             }
         }
 
