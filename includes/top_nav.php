@@ -13,35 +13,71 @@
 
         <!-- SEARCH FORM -->
 <!-- ITFLOW_GLOBAL_QUICK_ADD_MENU -->
+<style>
+/* ITFLOW_GLOBAL_QUICK_ADD_MENU_POLISHED */
+#itflowGlobalQuickAdd {
+    display: flex;
+    align-items: center;
+}
+
+#itflowGlobalQuickAddDropdown {
+    height: 31px;
+    line-height: 1.2;
+    display: inline-flex;
+    align-items: center;
+    border-radius: 0.2rem;
+    box-shadow: none;
+}
+
+#itflowGlobalQuickAdd .dropdown-menu {
+    min-width: 14rem;
+}
+
+#itflowGlobalQuickAdd .dropdown-header {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+</style>
+
 <li class="nav-item dropdown mr-2" id="itflowGlobalQuickAdd">
-    <a class="nav-link btn btn-primary btn-sm text-white px-3 py-1 mt-1 dropdown-toggle" href="#" id="itflowGlobalQuickAddDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" title="Quick Add">
+    <a class="nav-link btn btn-outline-light btn-sm px-3 py-1 dropdown-toggle" href="#" id="itflowGlobalQuickAddDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" title="Quick Add">
         <i class="fas fa-plus mr-1"></i><span class="d-none d-md-inline">New</span>
     </a>
-    <div class="dropdown-menu dropdown-menu-left" aria-labelledby="itflowGlobalQuickAddDropdown">
-                <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/ticket/ticket_add_v2.php" data-modal-size="lg">
-                    <i class="fas fa-life-ring fa-fw mr-2"></i>New Ticket
-                </a>
-                <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/client/client_add.php" data-modal-size="lg">
-                    <i class="fas fa-building fa-fw mr-2"></i>New Client Organization
-                </a>
-                <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/contact/contact_add.php">
-                    <i class="fas fa-user fa-fw mr-2"></i>New Contact
-                </a>
-                <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/asset/asset_add.php">
-                    <i class="fas fa-desktop fa-fw mr-2"></i>New Asset
-                </a>
-                <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/project/project_add.php" data-modal-size="lg">
-                    <i class="fas fa-project-diagram fa-fw mr-2"></i>New Project
-                </a>
-                <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/vendor/vendor_add.php" data-modal-size="lg">
-                    <i class="fas fa-handshake fa-fw mr-2"></i>New Vendor
-                </a>
-                <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/credential/credential_add.php" data-modal-size="lg">
-                    <i class="fas fa-key fa-fw mr-2"></i>New Credential
-                </a>
-                <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/document/document_add.php" data-modal-size="lg">
-                    <i class="fas fa-file-alt fa-fw mr-2"></i>New Document
-                </a>
+    <div class="dropdown-menu dropdown-menu-left shadow" aria-labelledby="itflowGlobalQuickAddDropdown">
+        <h6 class="dropdown-header">Quick Add</h6>
+
+        <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/ticket/ticket_add_v2.php" data-modal-size="lg">
+            <i class="fas fa-life-ring fa-fw mr-2"></i>New Ticket
+        </a>
+
+        <div class="dropdown-divider"></div>
+
+        <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/client/client_add.php" data-modal-size="lg">
+            <i class="fas fa-building fa-fw mr-2"></i>New Client Organization
+        </a>
+        <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/contact/contact_add.php">
+            <i class="fas fa-user fa-fw mr-2"></i>New Contact
+        </a>
+
+        <div class="dropdown-divider"></div>
+
+        <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/asset/asset_add.php">
+            <i class="fas fa-desktop fa-fw mr-2"></i>New Asset
+        </a>
+        <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/project/project_add.php" data-modal-size="lg">
+            <i class="fas fa-project-diagram fa-fw mr-2"></i>New Project
+        </a>
+        <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/vendor/vendor_add.php" data-modal-size="lg">
+            <i class="fas fa-handshake fa-fw mr-2"></i>New Vendor
+        </a>
+        <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/credential/credential_add.php" data-modal-size="lg">
+            <i class="fas fa-key fa-fw mr-2"></i>New Credential
+        </a>
+        <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/document/document_add.php" data-modal-size="lg">
+            <i class="fas fa-file-alt fa-fw mr-2"></i>New Document
+        </a>
     </div>
 </li>
 <!-- /ITFLOW_GLOBAL_QUICK_ADD_MENU -->
