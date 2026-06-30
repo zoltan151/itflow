@@ -485,6 +485,17 @@
                 </li>
 
                 <?php } ?>
+<!-- ITFLOW_PLATFORM_ROADMAP_SIDEBAR_LINK -->
+<li class="nav-header">PLATFORM</li>
+
+<li class="nav-item">
+    <a href="roadmap.php" class="nav-link <?php if (basename($_SERVER["PHP_SELF"]) == "roadmap.php") { echo "active"; } ?>">
+        <i class="nav-icon fas fa-map-signs"></i>
+        <p>Roadmap</p>
+    </a>
+</li>
+
+
 
             </ul>
         </nav>
