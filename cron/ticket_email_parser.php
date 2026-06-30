@@ -141,6 +141,50 @@ if (!function_exists('itflowLogEmailReplyTicketReopen')) {
 
 
 
+
+// ITFLOW_EMAIL_REPLY_REOPEN_ACTIVITY_GUARD
+if (!function_exists('itflowShouldLogEmailReplyTicketReopen')) {
+    function itflowShouldLogEmailReplyTicketReopen($previous_status_id, $new_status_id)
+    {
+        $previous_status_id = intval($previous_status_id);
+        $new_status_id = intval($new_status_id);
+
+        if ($previous_status_id <= 0 || $new_status_id <= 0 || $previous_status_id === $new_status_id) {
+            return false;
+        }
+
+        $previous_status_name = '';
+
+        if (function_exists('parserGetTicketStatusNameById')) {
+            $previous_status_name = strtolower(trim((string)parserGetTicketStatusNameById($previous_status_id)));
+        }
+
+        if ($previous_status_name === '') {
+            return false;
+        }
+
+        // Only log a true reopen when the previous state was a resolved/completed-style state.
+        // Do not log this for normal client replies on already-open/in-progress tickets.
+        $reopen_candidate_statuses = [
+            'resolved',
+            'complete',
+            'completed',
+            'done',
+            'fixed',
+            'solved'
+        ];
+
+        foreach ($reopen_candidate_statuses as $candidate) {
+            if (strpos($previous_status_name, $candidate) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
+
 // ITFLOW_EMAIL_PARSER_DISPLAY_NAME_CLEANUP
 if (!function_exists('parserCleanEmailDisplayName')) {
     function parserCleanEmailDisplayName(string $name, string $email = ''): string {
@@ -827,8 +871,11 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
 
         if ($ticket_reply_type === 'Client') {
             mysqli_query($mysqli, "UPDATE tickets SET ticket_status = $reply_target_status_id, ticket_resolved_at = NULL WHERE ticket_id = $ticket_id AND ticket_client_id = $client_id LIMIT 1");
-        itflowLogEmailReplyTicketReopen(($ticket_id ?? 0), ($client_id ?? 0), ($ticket_status ?? ($old_ticket_status ?? ($previous_ticket_status ?? '')))); // ITFLOW_EMAIL_REPLY_REOPEN_ACTIVITY_LOG_CALL
             $status_changed_to_reply_target = ($reply_target_status_id > 0 && $previous_ticket_status_id !== $reply_target_status_id);
+
+            if ($status_changed_to_reply_target && itflowShouldLogEmailReplyTicketReopen($previous_ticket_status_id, $reply_target_status_id)) {
+                itflowLogEmailReplyTicketReopen($ticket_id, $client_id, parserGetTicketStatusNameById($previous_ticket_status_id)); // ITFLOW_EMAIL_REPLY_REOPEN_ACTIVITY_LOG_CALL
+            }
         }
 
         if ($status_changed_to_reply_target && !empty($config_ticket_new_ticket_notification_email)) {
