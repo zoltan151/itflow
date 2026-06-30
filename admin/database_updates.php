@@ -5246,6 +5246,49 @@ END");
     }
 
 
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.54') {
+        // ITFLOW_ROADMAP_PHASE3E_PLANNING_FIELDS
+
+        $roadmap_columns = [
+            'roadmap_item_owner_id' => "ALTER TABLE `roadmap_items` ADD `roadmap_item_owner_id` int(11) NOT NULL DEFAULT 0 AFTER `roadmap_item_updated_by`",
+            'roadmap_item_effort' => "ALTER TABLE `roadmap_items` ADD `roadmap_item_effort` varchar(32) NOT NULL DEFAULT 'Medium' AFTER `roadmap_item_owner_id`",
+            'roadmap_item_impact' => "ALTER TABLE `roadmap_items` ADD `roadmap_item_impact` varchar(32) NOT NULL DEFAULT 'Medium' AFTER `roadmap_item_effort`",
+            'roadmap_item_complexity' => "ALTER TABLE `roadmap_items` ADD `roadmap_item_complexity` varchar(32) NOT NULL DEFAULT 'Medium' AFTER `roadmap_item_impact`",
+            'roadmap_item_sort_order' => "ALTER TABLE `roadmap_items` ADD `roadmap_item_sort_order` int(11) NOT NULL DEFAULT 0 AFTER `roadmap_item_complexity`",
+            'roadmap_item_pinned' => "ALTER TABLE `roadmap_items` ADD `roadmap_item_pinned` tinyint(1) NOT NULL DEFAULT 0 AFTER `roadmap_item_sort_order`",
+            'roadmap_item_dependencies' => "ALTER TABLE `roadmap_items` ADD `roadmap_item_dependencies` text DEFAULT NULL AFTER `roadmap_item_pinned`"
+        ];
+
+        foreach ($roadmap_columns as $column => $alter_sql) {
+            $column_exists = mysqli_query($mysqli, "SHOW COLUMNS FROM `roadmap_items` LIKE '$column'");
+
+            if ($column_exists && mysqli_num_rows($column_exists) == 0) {
+                mysqli_query($mysqli, $alter_sql);
+            }
+        }
+
+        $roadmap_indexes = [
+            'roadmap_item_owner_id' => "ALTER TABLE `roadmap_items` ADD INDEX `roadmap_item_owner_id` (`roadmap_item_owner_id`)",
+            'roadmap_item_impact' => "ALTER TABLE `roadmap_items` ADD INDEX `roadmap_item_impact` (`roadmap_item_impact`)",
+            'roadmap_item_effort' => "ALTER TABLE `roadmap_items` ADD INDEX `roadmap_item_effort` (`roadmap_item_effort`)",
+            'roadmap_item_complexity' => "ALTER TABLE `roadmap_items` ADD INDEX `roadmap_item_complexity` (`roadmap_item_complexity`)",
+            'roadmap_item_pinned' => "ALTER TABLE `roadmap_items` ADD INDEX `roadmap_item_pinned` (`roadmap_item_pinned`)",
+            'roadmap_item_sort_order' => "ALTER TABLE `roadmap_items` ADD INDEX `roadmap_item_sort_order` (`roadmap_item_sort_order`)"
+        ];
+
+        foreach ($roadmap_indexes as $index => $alter_sql) {
+            $index_exists = mysqli_query($mysqli, "SHOW INDEX FROM `roadmap_items` WHERE Key_name = '$index'");
+
+            if ($index_exists && mysqli_num_rows($index_exists) == 0) {
+                mysqli_query($mysqli, $alter_sql);
+            }
+        }
+
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.55'");
+    }
+
+
 }
 
 

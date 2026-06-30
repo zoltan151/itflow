@@ -1,5 +1,6 @@
 <?php
 // ITFLOW_PLATFORM_ROADMAP_PHASE3B
+// ITFLOW_ROADMAP_PHASE3E_PLANNING_FIELDS
 
 /*
  * ITFlow - Roadmap POST handler
@@ -17,9 +18,18 @@ function sanitizeRoadmapOption($value, $allowed, $fallback) {
     return $fallback;
 }
 
+function roadmapSqlValue($value) {
+    global $mysqli;
+
+    return mysqli_real_escape_string($mysqli, sanitizeInput($value ?? ''));
+}
+
 $roadmap_statuses = ['Backlog', 'Planned', 'In Development', 'Coming Soon', 'Shipped'];
 $roadmap_categories = ['Documentation', 'Credentials', 'Client Portal', 'Automation', 'Integrations', 'AI', 'Reporting', 'Security', 'Other'];
 $roadmap_priorities = ['Low', 'Medium', 'High', 'Critical'];
+$roadmap_efforts = ['Tiny', 'Small', 'Medium', 'Large', 'XL'];
+$roadmap_impacts = ['Low', 'Medium', 'High', 'Critical'];
+$roadmap_complexities = ['Low', 'Medium', 'High', 'Very High'];
 
 if (isset($_POST['add_roadmap_item'])) {
 
@@ -27,13 +37,21 @@ if (isset($_POST['add_roadmap_item'])) {
 
     enforceUserPermission('module_config', 2);
 
-    $title = sanitizeInput($_POST['roadmap_item_title'] ?? '');
-    $description = sanitizeInput($_POST['roadmap_item_description'] ?? '');
-    $category = sanitizeRoadmapOption($_POST['roadmap_item_category'] ?? '', $roadmap_categories, 'Other');
-    $status = sanitizeRoadmapOption($_POST['roadmap_item_status'] ?? '', $roadmap_statuses, 'Backlog');
-    $priority = sanitizeRoadmapOption($_POST['roadmap_item_priority'] ?? '', $roadmap_priorities, 'Medium');
-    $target_version = sanitizeInput($_POST['roadmap_item_target_version'] ?? '');
-    $notes = sanitizeInput($_POST['roadmap_item_notes'] ?? '');
+    $title = roadmapSqlValue($_POST['roadmap_item_title'] ?? '');
+    $description = roadmapSqlValue($_POST['roadmap_item_description'] ?? '');
+    $category = mysqli_real_escape_string($mysqli, sanitizeRoadmapOption($_POST['roadmap_item_category'] ?? '', $roadmap_categories, 'Other'));
+    $status = mysqli_real_escape_string($mysqli, sanitizeRoadmapOption($_POST['roadmap_item_status'] ?? '', $roadmap_statuses, 'Backlog'));
+    $priority = mysqli_real_escape_string($mysqli, sanitizeRoadmapOption($_POST['roadmap_item_priority'] ?? '', $roadmap_priorities, 'Medium'));
+    $target_version = roadmapSqlValue($_POST['roadmap_item_target_version'] ?? '');
+    $notes = roadmapSqlValue($_POST['roadmap_item_notes'] ?? '');
+
+    $owner_id = intval($_POST['roadmap_item_owner_id'] ?? 0);
+    $effort = mysqli_real_escape_string($mysqli, sanitizeRoadmapOption($_POST['roadmap_item_effort'] ?? '', $roadmap_efforts, 'Medium'));
+    $impact = mysqli_real_escape_string($mysqli, sanitizeRoadmapOption($_POST['roadmap_item_impact'] ?? '', $roadmap_impacts, 'Medium'));
+    $complexity = mysqli_real_escape_string($mysqli, sanitizeRoadmapOption($_POST['roadmap_item_complexity'] ?? '', $roadmap_complexities, 'Medium'));
+    $sort_order = intval($_POST['roadmap_item_sort_order'] ?? 0);
+    $pinned = isset($_POST['roadmap_item_pinned']) ? 1 : 0;
+    $dependencies = roadmapSqlValue($_POST['roadmap_item_dependencies'] ?? '');
 
     if (!$title) {
         flash_alert("Roadmap item title is required", 'error');
@@ -50,7 +68,14 @@ if (isset($_POST['add_roadmap_item'])) {
             roadmap_item_priority = '$priority',
             roadmap_item_target_version = '$target_version',
             roadmap_item_notes = '$notes',
-            roadmap_item_created_by = $session_user_id"
+            roadmap_item_created_by = $session_user_id,
+            roadmap_item_owner_id = $owner_id,
+            roadmap_item_effort = '$effort',
+            roadmap_item_impact = '$impact',
+            roadmap_item_complexity = '$complexity',
+            roadmap_item_sort_order = $sort_order,
+            roadmap_item_pinned = $pinned,
+            roadmap_item_dependencies = '$dependencies'"
     );
 
     $roadmap_item_id = mysqli_insert_id($mysqli);
@@ -70,13 +95,21 @@ if (isset($_POST['edit_roadmap_item'])) {
     enforceUserPermission('module_config', 2);
 
     $roadmap_item_id = intval($_POST['roadmap_item_id']);
-    $title = sanitizeInput($_POST['roadmap_item_title'] ?? '');
-    $description = sanitizeInput($_POST['roadmap_item_description'] ?? '');
-    $category = sanitizeRoadmapOption($_POST['roadmap_item_category'] ?? '', $roadmap_categories, 'Other');
-    $status = sanitizeRoadmapOption($_POST['roadmap_item_status'] ?? '', $roadmap_statuses, 'Backlog');
-    $priority = sanitizeRoadmapOption($_POST['roadmap_item_priority'] ?? '', $roadmap_priorities, 'Medium');
-    $target_version = sanitizeInput($_POST['roadmap_item_target_version'] ?? '');
-    $notes = sanitizeInput($_POST['roadmap_item_notes'] ?? '');
+    $title = roadmapSqlValue($_POST['roadmap_item_title'] ?? '');
+    $description = roadmapSqlValue($_POST['roadmap_item_description'] ?? '');
+    $category = mysqli_real_escape_string($mysqli, sanitizeRoadmapOption($_POST['roadmap_item_category'] ?? '', $roadmap_categories, 'Other'));
+    $status = mysqli_real_escape_string($mysqli, sanitizeRoadmapOption($_POST['roadmap_item_status'] ?? '', $roadmap_statuses, 'Backlog'));
+    $priority = mysqli_real_escape_string($mysqli, sanitizeRoadmapOption($_POST['roadmap_item_priority'] ?? '', $roadmap_priorities, 'Medium'));
+    $target_version = roadmapSqlValue($_POST['roadmap_item_target_version'] ?? '');
+    $notes = roadmapSqlValue($_POST['roadmap_item_notes'] ?? '');
+
+    $owner_id = intval($_POST['roadmap_item_owner_id'] ?? 0);
+    $effort = mysqli_real_escape_string($mysqli, sanitizeRoadmapOption($_POST['roadmap_item_effort'] ?? '', $roadmap_efforts, 'Medium'));
+    $impact = mysqli_real_escape_string($mysqli, sanitizeRoadmapOption($_POST['roadmap_item_impact'] ?? '', $roadmap_impacts, 'Medium'));
+    $complexity = mysqli_real_escape_string($mysqli, sanitizeRoadmapOption($_POST['roadmap_item_complexity'] ?? '', $roadmap_complexities, 'Medium'));
+    $sort_order = intval($_POST['roadmap_item_sort_order'] ?? 0);
+    $pinned = isset($_POST['roadmap_item_pinned']) ? 1 : 0;
+    $dependencies = roadmapSqlValue($_POST['roadmap_item_dependencies'] ?? '');
 
     if (!$title) {
         flash_alert("Roadmap item title is required", 'error');
@@ -94,7 +127,14 @@ if (isset($_POST['edit_roadmap_item'])) {
             roadmap_item_target_version = '$target_version',
             roadmap_item_notes = '$notes',
             roadmap_item_updated_at = NOW(),
-            roadmap_item_updated_by = $session_user_id
+            roadmap_item_updated_by = $session_user_id,
+            roadmap_item_owner_id = $owner_id,
+            roadmap_item_effort = '$effort',
+            roadmap_item_impact = '$impact',
+            roadmap_item_complexity = '$complexity',
+            roadmap_item_sort_order = $sort_order,
+            roadmap_item_pinned = $pinned,
+            roadmap_item_dependencies = '$dependencies'
          WHERE roadmap_item_id = $roadmap_item_id"
     );
 
