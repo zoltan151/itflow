@@ -270,7 +270,7 @@ if ($rmm_deployments_table_sql && mysqli_num_rows($rmm_deployments_table_sql) > 
 
                     <?php } ?>
 
-                    <!-- Allow files even without module_support for things like contracts, etc. ) -->
+                    <!-- Allow documentation even without module_support for things like contracts, SOPs, diagrams, and onboarding/offboarding docs. -->
                     <li class="nav-item">
                         <a href="/agent/files.php?client_id=<?php echo $client_id; ?>" class="nav-link <?php if (basename($_SERVER["PHP_SELF"]) == "files.php") { echo "active"; } ?>">
                             <i class="nav-icon fas fa-folder"></i>
