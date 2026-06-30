@@ -146,7 +146,7 @@
         <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/credential/credential_add.php" data-modal-size="lg">
             <i class="fas fa-key fa-fw mr-2"></i>New Credential
         </a>
-        <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/document/document_add.php" data-modal-size="lg">
+        <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/document/document_add_global.php" data-modal-size="lg">
             <i class="fas fa-file-alt fa-fw mr-2"></i>New Document
         </a>
     </div>
