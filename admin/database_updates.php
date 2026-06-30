@@ -5014,6 +5014,26 @@ END");
         mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.49'");
     }
 
+    if (CURRENT_DATABASE_VERSION == '2.4.4.49') {
+        // ITFLOW_DOCUMENT_TYPES_DB_UPDATE
+        $column_exists = mysqli_query($mysqli, "SHOW COLUMNS FROM `documents` LIKE 'document_type'");
+
+        if ($column_exists && mysqli_num_rows($column_exists) == 0) {
+            mysqli_query($mysqli, "ALTER TABLE `documents` ADD `document_type` varchar(64) NOT NULL DEFAULT 'General' AFTER `document_description`");
+        }
+
+        $index_exists = mysqli_query($mysqli, "SHOW INDEX FROM `documents` WHERE Key_name = 'document_type'");
+
+        if ($index_exists && mysqli_num_rows($index_exists) == 0) {
+            mysqli_query($mysqli, "ALTER TABLE `documents` ADD INDEX `document_type` (`document_type`)");
+        }
+
+        mysqli_query($mysqli, "UPDATE `documents` SET `document_type` = 'General' WHERE `document_type` IS NULL OR `document_type` = ''");
+
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.50'");
+    }
+
+
 }
 
 
