@@ -5098,6 +5098,83 @@ END");
 
 
 
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.52') {
+        // ITFLOW_ROADMAP_EXPANDED_SEEDS_PHASE3C
+        mysqli_query($mysqli, "CREATE TABLE IF NOT EXISTS `roadmap_items` (
+            `roadmap_item_id` int(11) NOT NULL AUTO_INCREMENT,
+            `roadmap_item_title` varchar(255) NOT NULL,
+            `roadmap_item_description` text DEFAULT NULL,
+            `roadmap_item_category` varchar(64) NOT NULL DEFAULT 'Other',
+            `roadmap_item_status` varchar(64) NOT NULL DEFAULT 'Backlog',
+            `roadmap_item_priority` varchar(64) NOT NULL DEFAULT 'Medium',
+            `roadmap_item_target_version` varchar(64) DEFAULT NULL,
+            `roadmap_item_notes` text DEFAULT NULL,
+            `roadmap_item_created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `roadmap_item_updated_at` datetime DEFAULT NULL,
+            `roadmap_item_archived_at` datetime DEFAULT NULL,
+            `roadmap_item_created_by` int(11) NOT NULL DEFAULT 0,
+            `roadmap_item_updated_by` int(11) NOT NULL DEFAULT 0,
+            PRIMARY KEY (`roadmap_item_id`),
+            KEY `roadmap_item_status` (`roadmap_item_status`),
+            KEY `roadmap_item_category` (`roadmap_item_category`),
+            KEY `roadmap_item_priority` (`roadmap_item_priority`),
+            KEY `roadmap_item_archived_at` (`roadmap_item_archived_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        $expanded_roadmap_items = [
+            ['Documentation Health Dashboard', 'Shows stale docs, missing docs, unreviewed SOPs, expired credentials, missing network diagrams, incomplete client profiles, and other documentation gaps.', 'Reporting', 'Backlog', 'High'],
+            ['Client Documentation Completeness Score', 'Per-client score showing what documentation exists versus what is missing across core MSP documentation areas.', 'Reporting', 'Backlog', 'High'],
+            ['Global Tagging System', 'Tags that can apply across documents, assets, credentials, tickets, vendors, contacts, networks, roadmap items, and future flexible assets.', 'Documentation', 'Backlog', 'High'],
+            ['Universal Import / Export Tools', 'CSV and JSON import/export for documents, assets, credentials, vendors, networks, contacts, roadmap items, and future flexible assets.', 'Integrations', 'Backlog', 'Medium'],
+            ['Documentation Template Library', 'Reusable templates for SOPs, onboarding, offboarding, firewall documentation, M365 documentation, VoIP documentation, backup documentation, and client standards.', 'Documentation', 'Backlog', 'Medium'],
+            ['Role-Based Documentation Permissions', 'More granular access control for documents, credentials, roadmap items, client-visible records, and internal-only notes.', 'Security', 'Backlog', 'High'],
+            ['Audit Trail Improvements', 'Improved historical tracking for who viewed, edited, exported, deleted, archived, restored, or shared sensitive records.', 'Security', 'Backlog', 'High'],
+            ['Public API', 'API endpoints for creating, reading, updating, and syncing clients, assets, documents, credentials, tickets, roadmap items, and integrations.', 'Integrations', 'Backlog', 'High'],
+            ['Webhook Automation', 'Outbound webhooks for changes to tickets, documents, assets, credentials, domains, SSL certificates, roadmap items, and integration sync results.', 'Automation', 'Backlog', 'High'],
+            ['Microsoft 365 / Entra ID Auto-Documentation', 'Pull users, groups, domains, licenses, MFA status, tenant basics, and Conditional Access summary data into ITFlow.', 'Integrations', 'Backlog', 'Critical'],
+            ['Google Workspace Auto-Documentation', 'Pull users, groups, aliases, domains, shared drives, admin settings, and basic security posture data into ITFlow.', 'Integrations', 'Backlog', 'High'],
+            ['VoIP Platform Integration', 'Integrate with VoIP platforms to sync tenants, users, extensions, DIDs, devices, call flows, ring groups, auto attendants, and emergency address details.', 'Integrations', 'Backlog', 'High'],
+            ['UISP Integration', 'Sync UISP sites, devices, links, radios, alerts, client network equipment, and topology details into ITFlow.', 'Integrations', 'Backlog', 'Medium'],
+            ['UniFi Integration', 'Sync UniFi sites, gateways, switches, access points, clients, VLANs, Wi-Fi networks, firmware status, and topology data into ITFlow.', 'Integrations', 'Backlog', 'High'],
+            ['RustDesk Integration', 'Track RustDesk hosts, IDs, aliases, access status, and client mappings from self-hosted RustDesk infrastructure.', 'Integrations', 'Backlog', 'Medium'],
+            ['Bitdefender Integration', 'Sync companies, endpoints, protection status, policy assignment, alerts, risk status, and licensing data from Bitdefender GravityZone.', 'Integrations', 'Backlog', 'High'],
+            ['RMM Integration Improvements', 'Continue improving TacticalRMM/RMM integration for asset sync, checks, patches, pending actions, agent status, reboot status, and documentation links.', 'Integrations', 'In Development', 'Critical'],
+            ['Diagram / Whiteboard Improvements', 'Improve the recently built diagram and whiteboard feature with drag-and-drop editing, better layouts, linked items, richer node types, and export options.', 'Documentation', 'In Development', 'High'],
+            ['Network Discovery / Scanner', 'Scan client networks and suggest assets, open ports, hostnames, vendors, possible device types, and missing documentation.', 'Automation', 'Backlog', 'High'],
+            ['Backup Documentation / Backup Health Module', 'Track backup systems, protected assets, restore points, backup health, backup alerts, and restore-testing SOPs.', 'Automation', 'Backlog', 'High'],
+            ['VoIP Documentation Module', 'Track phone systems, carriers, DIDs, extensions, call flows, ring groups, auto attendants, devices, and emergency address information.', 'Documentation', 'Backlog', 'High'],
+            ['ISP / Circuit Tracker', 'Track ISPs, circuits, static IPs, account numbers, contract terms, speeds, modem and router details, renewal dates, and outages.', 'Documentation', 'Backlog', 'Medium'],
+            ['Change Log / Change Management', 'Track client-impacting changes, approvals, implementation notes, rollback plans, affected assets, related tickets, and related documentation.', 'Automation', 'Backlog', 'High'],
+            ['Internal Release Notes', 'Use shipped roadmap items and commits to generate internal release notes and change summaries for ITFlow improvements.', 'Automation', 'Backlog', 'Medium'],
+            ['Client Onboarding / Offboarding Automation', 'Generate standardized project tasks, documentation checklists, tickets, credentials, contacts, assets, and SOP requirements for onboarding and offboarding.', 'Automation', 'Backlog', 'High'],
+            ['Integration Sync Health Dashboard', 'Show health, last sync time, errors, stale records, and sync coverage for each external integration.', 'Reporting', 'Backlog', 'Medium']
+        ];
+
+        foreach ($expanded_roadmap_items as $item) {
+            $title = mysqli_real_escape_string($mysqli, $item[0]);
+            $description = mysqli_real_escape_string($mysqli, $item[1]);
+            $category = mysqli_real_escape_string($mysqli, $item[2]);
+            $status = mysqli_real_escape_string($mysqli, $item[3]);
+            $priority = mysqli_real_escape_string($mysqli, $item[4]);
+
+            $existing_item = mysqli_query($mysqli, "SELECT roadmap_item_id FROM roadmap_items WHERE roadmap_item_title = '$title' LIMIT 1");
+
+            if ($existing_item && mysqli_num_rows($existing_item) == 0) {
+                mysqli_query($mysqli, "INSERT INTO roadmap_items SET
+                    roadmap_item_title = '$title',
+                    roadmap_item_description = '$description',
+                    roadmap_item_category = '$category',
+                    roadmap_item_status = '$status',
+                    roadmap_item_priority = '$priority',
+                    roadmap_item_created_by = 0");
+            }
+        }
+
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.53'");
+    }
+
+
 }
 
 
