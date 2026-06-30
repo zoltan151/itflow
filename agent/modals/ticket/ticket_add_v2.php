@@ -99,8 +99,9 @@ ob_start();
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <textarea class="form-control tinymceTicket" id="detailsInput" name="details"></textarea>
+                <div class="form-group" data-itflow-marker="ITFLOW_NEW_TICKET_DETAILS_REQUIRED">
+                    <label for="detailsInput">Details <strong class="text-danger">*</strong></label>
+                    <textarea class="form-control tinymceTicket" id="detailsInput" name="details" required data-required="true" aria-required="true"></textarea>
                 </div>
 
                 <div class="row">
@@ -360,6 +361,29 @@ $(document).on('change', '#ticket_template_select', function () {
 .select2-container.itflow-new-ticket-invalid-field .select2-selection {
     border-color: #dc3545 !important;
 }
+
+/* ITFLOW_NEW_TICKET_VALIDATION_ACTIVE_TAB_STYLE */
+/* Keep active invalid tabs readable: white text on blue, red/white badge contrast. */
+.nav-pills .nav-link.itflow-tab-has-missing.active {
+    color: #fff !important;
+}
+
+.nav-pills .nav-link.itflow-tab-has-missing.active .itflow-required-tab-indicator {
+    color: #fff !important;
+}
+
+.nav-pills .nav-link.itflow-tab-has-missing.active .itflow-required-tab-missing-badge {
+    background: #fff;
+    color: #dc3545;
+}
+
+.nav-pills .nav-link.itflow-tab-has-missing:not(.active) {
+    color: #dc3545 !important;
+}
+
+.nav-pills .nav-link.itflow-tab-has-missing:not(.active) .itflow-required-tab-indicator {
+    color: #dc3545 !important;
+}
 </style>
 
 <script>
@@ -616,6 +640,33 @@ $(document).on('change', '#ticket_template_select', function () {
     }
 
     function getFieldValue(field) {
+        // ITFLOW_NEW_TICKET_TINYMCE_REQUIRED_VALUE
+        if (field.id && window.tinymce && typeof window.tinymce.get === 'function') {
+            var editor = window.tinymce.get(field.id);
+            if (editor) {
+                var editorText = '';
+
+                try {
+                    editorText = (editor.getContent({ format: 'text' }) || '').trim();
+                } catch (error) {
+                    editorText = '';
+                }
+
+                if (editorText !== '') {
+                    return editorText;
+                }
+
+                try {
+                    var editorHtml = editor.getContent() || '';
+                    var tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = editorHtml;
+                    return (tempDiv.textContent || tempDiv.innerText || '').replace(/\s+/g, ' ').trim();
+                } catch (error) {
+                    return '';
+                }
+            }
+        }
+
         if (field.tagName === 'SELECT' && field.multiple) {
             return Array.prototype.slice.call(field.selectedOptions).map(function (option) {
                 return option.value;
