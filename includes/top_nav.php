@@ -41,6 +41,27 @@
     box-shadow: none;
 }
 
+/* ITFLOW_GLOBAL_QUICK_ADD_BUTTON_POP */
+/* Make the global creation action obvious against the dark navbar. */
+#itflowGlobalQuickAddDropdown.btn-success {
+    background-color: #28a745;
+    border-color: #34ce57;
+    color: #fff !important;
+    font-weight: 700;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+#itflowGlobalQuickAddDropdown.btn-success:hover,
+#itflowGlobalQuickAddDropdown.btn-success:focus {
+    background-color: #218838;
+    border-color: #34ce57;
+    color: #fff !important;
+}
+
+#itflowGlobalQuickAddDropdown.btn-success i {
+    color: #fff !important;
+}
+
 #itflowGlobalQuickAdd .dropdown-menu {
     min-width: 14rem;
 }
@@ -54,7 +75,7 @@
 </style>
 
 <li class="nav-item dropdown" id="itflowGlobalQuickAdd">
-    <a class="nav-link btn btn-outline-light btn-sm px-3 py-1 dropdown-toggle" href="#" id="itflowGlobalQuickAddDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" title="Quick Add">
+    <a class="nav-link btn btn-success btn-sm px-3 py-1 dropdown-toggle" href="#" id="itflowGlobalQuickAddDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" title="Quick Add">
         <i class="fas fa-plus mr-1"></i><span class="d-none d-md-inline">New</span>
     </a>
     <div class="dropdown-menu dropdown-menu-left shadow" aria-labelledby="itflowGlobalQuickAddDropdown">
