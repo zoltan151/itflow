@@ -1,5 +1,6 @@
 <?php
 // ITFLOW_NETWORK_DIAGRAM_PHASE2C
+// ITFLOW_NETWORK_DIAGRAM_PHASE2C_SCHEMA_FIX
 
 /*
  * ITFlow - GET/POST request handler for client networks
@@ -105,6 +106,11 @@ if (isset($_GET['generate_network_diagram'])) {
         && isset($interface_columns['interface_network_id'])
         && isset($interface_columns['interface_asset_id'])
     ) {
+        // ITFLOW_NETWORK_DIAGRAM_PHASE2C_SCHEMA_FIX
+        // Build the interface query from columns that actually exist so schema differences do not 500.
+        $interface_name_select = isset($interface_columns['interface_name']) ? "asset_interfaces.interface_name" : "'' AS interface_name";
+        $interface_ip_select = isset($interface_columns['interface_ip']) ? "asset_interfaces.interface_ip" : "'' AS interface_ip";
+
         $sql_assets = mysqli_query(
             $mysqli,
             "SELECT DISTINCT
@@ -114,16 +120,13 @@ if (isset($_GET['generate_network_diagram'])) {
                 assets.asset_make,
                 assets.asset_model,
                 assets.asset_status,
-                asset_interfaces.interface_name,
-                asset_interfaces.interface_ip,
-                asset_interfaces.interface_connected_asset_id,
-                connected_assets.asset_name AS connected_asset_name
+                $interface_name_select,
+                $interface_ip_select
              FROM asset_interfaces
              LEFT JOIN assets ON interface_asset_id = assets.asset_id
-             LEFT JOIN assets AS connected_assets ON interface_connected_asset_id = connected_assets.asset_id
              WHERE interface_network_id = $network_id
                AND assets.asset_archived_at IS NULL
-             ORDER BY assets.asset_type ASC, assets.asset_name ASC, asset_interfaces.interface_name ASC
+             ORDER BY assets.asset_type ASC, assets.asset_name ASC
              LIMIT 250"
         );
 
@@ -136,7 +139,6 @@ if (isset($_GET['generate_network_diagram'])) {
                 $asset_model = sanitizeInput($asset['asset_model'] ?? '');
                 $interface_name = sanitizeInput($asset['interface_name'] ?? '');
                 $interface_ip = sanitizeInput($asset['interface_ip'] ?? '');
-                $connected_asset_name = sanitizeInput($asset['connected_asset_name'] ?? '');
 
                 if (!$asset_id || !$asset_name) {
                     continue;
@@ -150,19 +152,16 @@ if (isset($_GET['generate_network_diagram'])) {
 
                 if ($interface_ip) {
                     $asset_label .= " ($interface_ip)";
+                } elseif ($interface_name) {
+                    $asset_label .= " ($interface_name)";
                 }
 
                 $diagram_lines[] = "$network_node -> $asset_label";
                 $asset_count++;
                 $interface_count++;
-
-                if ($connected_asset_name) {
-                    $diagram_lines[] = "$asset_label -> $connected_asset_name";
-                }
             }
         }
     }
-
     if ($asset_count == 0) {
         $asset_query = "SELECT asset_id, asset_name, asset_type, asset_make, asset_model, asset_status
             FROM assets
