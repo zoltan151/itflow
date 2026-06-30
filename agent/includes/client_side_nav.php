@@ -1,6 +1,6 @@
+<!-- ITFLOW_RENAME_FILES_SECTION_TO_DOCUMENTATION -->
 <!-- Main Sidebar Container -->
-<aside class="main-sidebar sidebar-dark-<?php
-// ITFLOW_RENAME_FILES_SECTION_TO_DOCUMENTATION if (isset($_GET['client_id'])) { echo "gray"; } else { echo nullable_htmlentities($config_theme); } ?> d-print-none">
+<aside class="main-sidebar sidebar-dark-<?php if (isset($_GET['client_id'])) { echo "gray"; } else { echo nullable_htmlentities($config_theme); } ?> d-print-none">
 
     <?php
     $is_internal_workspace_client_side_nav = !empty($config_internal_workspace_enable)
