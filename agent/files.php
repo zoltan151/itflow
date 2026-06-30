@@ -1,4 +1,5 @@
 <?php
+// ITFLOW_DOCUMENTATION_PHASE3A_FILTERS
 // ITFLOW_DOCUMENT_TYPES_PHASE2A
 // ITFLOW_RENAME_FILES_SECTION_TO_DOCUMENTATION
 
@@ -7,6 +8,58 @@ $sort = "name";
 $order = "ASC";
 
 require_once "includes/inc_all_client.php";
+
+
+
+// ITFLOW_DOCUMENTATION_PHASE3A_FILTERS
+$documentation_filter_type = sanitizeInput($_GET['document_type'] ?? '');
+$documentation_filter_visibility = sanitizeInput($_GET['document_visibility'] ?? '');
+$documentation_filter_recent = intval($_GET['recent_docs'] ?? 0);
+
+$documentation_document_types = [
+    'General',
+    'SOP',
+    'Client SOP',
+    'Runbook',
+    'Onboarding',
+    'Offboarding',
+    'Network Diagram',
+    'Diagram / Whiteboard',
+    'Process Map',
+    'Mind Map',
+    'Planner',
+    'Timeline',
+    'Internal KB',
+    'Other',
+];
+
+if (!in_array($documentation_filter_type, $documentation_document_types, true)) {
+    $documentation_filter_type = '';
+}
+
+if (!in_array($documentation_filter_visibility, ['internal', 'client_visible'], true)) {
+    $documentation_filter_visibility = '';
+}
+
+$documentation_filters_active = ($documentation_filter_type || $documentation_filter_visibility || $documentation_filter_recent);
+
+function documentationFilterUrl(array $overrides = []) {
+    $params = $_GET;
+
+    foreach ($overrides as $key => $value) {
+        if ($value === '' || $value === null) {
+            unset($params[$key]);
+        } else {
+            $params[$key] = $value;
+        }
+    }
+
+    return 'files.php?' . http_build_query($params);
+}
+
+function documentationFilterActiveClass($current, $expected) {
+    return (string)$current === (string)$expected ? 'active' : '';
+}
 
 // Folder
 if (!empty($_GET['folder_id'])) {
@@ -282,17 +335,40 @@ if ($view == 1) {
         $doc_search_snippet = "AND (MATCH(document_content_raw) AGAINST ('$safe_q') OR document_name LIKE '%$safe_q%')";
     }
 
+
+    // ITFLOW_DOCUMENTATION_PHASE3A_FILTERS
+    $doc_filter_snippet = "";
+
+    if ($documentation_filter_type) {
+        $documentation_filter_type_sql = mysqli_real_escape_string($mysqli, $documentation_filter_type);
+        $doc_filter_snippet .= " AND document_type = '$documentation_filter_type_sql'";
+    }
+
+    if ($documentation_filter_visibility === 'internal') {
+        $doc_filter_snippet .= " AND document_client_visible = 0";
+    } elseif ($documentation_filter_visibility === 'client_visible') {
+        $doc_filter_snippet .= " AND document_client_visible = 1";
+    }
+
+    if ($documentation_filter_recent) {
+        $doc_filter_snippet .= " AND COALESCE(document_updated_at, document_created_at) >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
+    }
+
     // Files query (NO limit - we'll paginate in PHP)
-    $sql_files = mysqli_query(
-        $mysqli,
-        "SELECT files.*, users.user_name
-         FROM files
-         LEFT JOIN users ON file_created_by = user_id
-         WHERE file_client_id = $client_id
-         AND file_$archive_query
-         $file_folder_snippet
-         $file_search_snippet"
-    );
+    if ($documentation_filters_active) {
+        $sql_files = false;
+    } else {
+        $sql_files = mysqli_query(
+            $mysqli,
+            "SELECT files.*, users.user_name
+             FROM files
+             LEFT JOIN users ON file_created_by = user_id
+             WHERE file_client_id = $client_id
+             AND file_$archive_query
+             $file_folder_snippet
+             $file_search_snippet"
+        );
+    }
 
     // Documents query (NO limit - paginate in PHP)
     $sql_documents = mysqli_query(
@@ -303,11 +379,12 @@ if ($view == 1) {
          WHERE document_client_id = $client_id
          AND document_$archive_query
          $doc_folder_snippet
-         $doc_search_snippet"
+         $doc_search_snippet
+          $doc_filter_snippet"
     );
 
     // Normalize FILES into $items
-    while ($row = mysqli_fetch_assoc($sql_files)) {
+    while ($sql_files && $row = mysqli_fetch_assoc($sql_files)) {
         $file_id            = intval($row['file_id']);
         $file_name          = nullable_htmlentities($row['file_name']);
         $file_description   = nullable_htmlentities($row['file_description']);
@@ -464,6 +541,72 @@ $num_root_items = intval($row_root_files['num']) + intval($row_root_docs['num'])
                 </div>
             </div>
         </div>
+    </div>
+
+
+    <!-- ITFLOW_DOCUMENTATION_PHASE3A_FILTERS -->
+    <div class="card-body border-bottom d-print-none">
+        <div class="d-flex flex-wrap align-items-center justify-content-between">
+            <div class="mb-2 mb-md-0">
+                <strong class="mr-2"><i class="fas fa-filter mr-1"></i>Documentation Filters</strong>
+                <?php if ($documentation_filters_active) { ?>
+                    <a class="btn btn-sm btn-outline-secondary" href="<?= documentationFilterUrl(['document_type' => '', 'document_visibility' => '', 'recent_docs' => '']) ?>">
+                        Clear Filters
+                    </a>
+                <?php } ?>
+            </div>
+            <div class="text-muted small">
+                Filters apply to documents. Uploaded files are hidden while document filters are active.
+            </div>
+        </div>
+
+        <hr class="my-3">
+
+        <div class="mb-2">
+            <span class="text-muted mr-2">Type:</span>
+            <div class="btn-group flex-wrap" role="group" aria-label="Document type filters">
+                <a class="btn btn-sm btn-outline-primary <?= documentationFilterActiveClass($documentation_filter_type, '') ?>" href="<?= documentationFilterUrl(['document_type' => '']) ?>">All</a>
+                <a class="btn btn-sm btn-outline-primary <?= documentationFilterActiveClass($documentation_filter_type, 'SOP') ?>" href="<?= documentationFilterUrl(['document_type' => 'SOP']) ?>">SOPs</a>
+                <a class="btn btn-sm btn-outline-primary <?= documentationFilterActiveClass($documentation_filter_type, 'Client SOP') ?>" href="<?= documentationFilterUrl(['document_type' => 'Client SOP']) ?>">Client SOPs</a>
+                <a class="btn btn-sm btn-outline-primary <?= documentationFilterActiveClass($documentation_filter_type, 'Runbook') ?>" href="<?= documentationFilterUrl(['document_type' => 'Runbook']) ?>">Runbooks</a>
+                <a class="btn btn-sm btn-outline-primary <?= documentationFilterActiveClass($documentation_filter_type, 'Network Diagram') ?>" href="<?= documentationFilterUrl(['document_type' => 'Network Diagram']) ?>">Network Diagrams</a>
+                <a class="btn btn-sm btn-outline-primary <?= documentationFilterActiveClass($documentation_filter_type, 'Diagram / Whiteboard') ?>" href="<?= documentationFilterUrl(['document_type' => 'Diagram / Whiteboard']) ?>">Whiteboards</a>
+                <a class="btn btn-sm btn-outline-primary <?= documentationFilterActiveClass($documentation_filter_type, 'Onboarding') ?>" href="<?= documentationFilterUrl(['document_type' => 'Onboarding']) ?>">Onboarding</a>
+                <a class="btn btn-sm btn-outline-primary <?= documentationFilterActiveClass($documentation_filter_type, 'Offboarding') ?>" href="<?= documentationFilterUrl(['document_type' => 'Offboarding']) ?>">Offboarding</a>
+            </div>
+        </div>
+
+        <div>
+            <span class="text-muted mr-2">Visibility:</span>
+            <div class="btn-group" role="group" aria-label="Document visibility filters">
+                <a class="btn btn-sm btn-outline-secondary <?= documentationFilterActiveClass($documentation_filter_visibility, '') ?>" href="<?= documentationFilterUrl(['document_visibility' => '']) ?>">Any</a>
+                <a class="btn btn-sm btn-outline-secondary <?= documentationFilterActiveClass($documentation_filter_visibility, 'internal') ?>" href="<?= documentationFilterUrl(['document_visibility' => 'internal']) ?>">Internal</a>
+                <a class="btn btn-sm btn-outline-secondary <?= documentationFilterActiveClass($documentation_filter_visibility, 'client_visible') ?>" href="<?= documentationFilterUrl(['document_visibility' => 'client_visible']) ?>">Client Visible</a>
+            </div>
+
+            <span class="text-muted ml-3 mr-2">Activity:</span>
+            <div class="btn-group" role="group" aria-label="Document activity filters">
+                <a class="btn btn-sm btn-outline-secondary <?= documentationFilterActiveClass($documentation_filter_recent, 0) ?>" href="<?= documentationFilterUrl(['recent_docs' => '']) ?>">All Time</a>
+                <a class="btn btn-sm btn-outline-secondary <?= documentationFilterActiveClass($documentation_filter_recent, 1) ?>" href="<?= documentationFilterUrl(['recent_docs' => 1]) ?>">Recently Updated</a>
+            </div>
+        </div>
+
+        <?php if ($documentation_filters_active) { ?>
+            <div class="small text-muted mt-2">
+                Active:
+                <?php if ($documentation_filter_type) { ?>
+                    <span class="badge badge-info mr-1"><?= $documentation_filter_type ?></span>
+                <?php } ?>
+                <?php if ($documentation_filter_visibility === 'internal') { ?>
+                    <span class="badge badge-secondary mr-1">Internal</span>
+                <?php } elseif ($documentation_filter_visibility === 'client_visible') { ?>
+                    <span class="badge badge-success mr-1">Client Visible</span>
+                <?php } ?>
+                <?php if ($documentation_filter_recent) { ?>
+                    <span class="badge badge-warning mr-1">Recently Updated</span>
+                <?php } ?>
+            </div>
+        <?php } ?>
     </div>
 
     <div class="card-body">
