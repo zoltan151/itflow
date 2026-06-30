@@ -23,7 +23,13 @@
 /* ITFLOW_GLOBAL_QUICK_ADD_SEARCH_SPACING */
 /* Give the global action a little breathing room before Search everywhere. */
 #itflowGlobalQuickAdd {
-    margin-right: 0.75rem !important;
+    margin-right: 1.5rem !important;
+}
+
+/* ITFLOW_GLOBAL_SEARCH_LEFT_SPACING */
+/* Keep Search everywhere visually separated from Quick Add. */
+#itflowGlobalQuickAdd + form.form-inline {
+    margin-left: 0.35rem;
 }
 
 #itflowGlobalQuickAddDropdown {
@@ -47,7 +53,7 @@
 }
 </style>
 
-<li class="nav-item dropdown mr-2" id="itflowGlobalQuickAdd">
+<li class="nav-item dropdown" id="itflowGlobalQuickAdd">
     <a class="nav-link btn btn-outline-light btn-sm px-3 py-1 dropdown-toggle" href="#" id="itflowGlobalQuickAddDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" title="Quick Add">
         <i class="fas fa-plus mr-1"></i><span class="d-none d-md-inline">New</span>
     </a>
