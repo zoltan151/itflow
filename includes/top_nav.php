@@ -20,6 +20,12 @@
     align-items: center;
 }
 
+/* ITFLOW_GLOBAL_QUICK_ADD_SEARCH_SPACING */
+/* Give the global action a little breathing room before Search everywhere. */
+#itflowGlobalQuickAdd {
+    margin-right: 0.75rem !important;
+}
+
 #itflowGlobalQuickAddDropdown {
     height: 31px;
     line-height: 1.2;
