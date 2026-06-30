@@ -1,4 +1,5 @@
 <?php
+// ITFLOW_DIAGRAM_WHITEBOARD_PHASE2B
 // ITFLOW_DOCUMENT_TYPES_PHASE2A
 
 /*
@@ -262,6 +263,72 @@ if (isset($_POST['edit_document'])) {
     );
 
     flash_alert("Document <strong>$name</strong> edited, previous version kept");
+
+    redirect("document_details.php?client_id=$client_id&document_id=$document_id");
+
+}
+
+
+if (isset($_POST['save_document_diagram'])) {
+
+    validateCSRFToken($_POST['csrf_token']);
+
+    enforceUserPermission('module_support', 2);
+
+    $document_id = intval($_POST['document_id']);
+    $document_diagram_data = mysqli_real_escape_string($mysqli, trim($_POST['document_diagram_data'] ?? ''));
+
+    $sql_document = mysqli_query(
+        $mysqli,
+        "SELECT document_name, document_client_id, document_type
+         FROM documents
+         WHERE document_id = $document_id
+         LIMIT 1"
+    );
+
+    if (!$sql_document || mysqli_num_rows($sql_document) == 0) {
+        flash_alert("Document not found", 'error');
+        redirect();
+    }
+
+    $row = mysqli_fetch_assoc($sql_document);
+    $document_name = sanitizeInput($row['document_name']);
+    $client_id = intval($row['document_client_id']);
+    $document_type = sanitizeInput($row['document_type']);
+
+    enforceClientAccess();
+
+    $diagram_document_types = [
+        'Diagram / Whiteboard',
+        'Network Diagram',
+        'Process Map',
+        'Mind Map',
+    ];
+
+    if (!in_array($document_type, $diagram_document_types, true)) {
+        flash_alert("Diagram editor is only available for diagram document types", 'error');
+        redirect("document_details.php?client_id=$client_id&document_id=$document_id");
+    }
+
+    mysqli_query(
+        $mysqli,
+        "UPDATE documents SET
+            document_diagram_data = '$document_diagram_data',
+            document_diagram_updated_at = NOW(),
+            document_updated_by = $session_user_id,
+            document_updated_at = NOW()
+         WHERE document_id = $document_id"
+    );
+
+    logAction(
+        "Document",
+        "Edit",
+        "$session_name updated diagram data for document $document_name",
+        $client_id,
+        $document_id
+    );
+
+    flash_alert("Diagram saved for document <strong>$document_name</strong>");
 
     redirect("document_details.php?client_id=$client_id&document_id=$document_id");
 

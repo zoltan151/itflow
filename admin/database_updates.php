@@ -5033,6 +5033,24 @@ END");
         mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.50'");
     }
 
+    if (CURRENT_DATABASE_VERSION == '2.4.4.50') {
+        // ITFLOW_DIAGRAM_WHITEBOARD_PHASE2B
+        $diagram_data_column_exists = mysqli_query($mysqli, "SHOW COLUMNS FROM `documents` LIKE 'document_diagram_data'");
+
+        if ($diagram_data_column_exists && mysqli_num_rows($diagram_data_column_exists) == 0) {
+            mysqli_query($mysqli, "ALTER TABLE `documents` ADD `document_diagram_data` LONGTEXT NULL DEFAULT NULL AFTER `document_type`");
+        }
+
+        $diagram_updated_column_exists = mysqli_query($mysqli, "SHOW COLUMNS FROM `documents` LIKE 'document_diagram_updated_at'");
+
+        if ($diagram_updated_column_exists && mysqli_num_rows($diagram_updated_column_exists) == 0) {
+            mysqli_query($mysqli, "ALTER TABLE `documents` ADD `document_diagram_updated_at` DATETIME NULL DEFAULT NULL AFTER `document_diagram_data`");
+        }
+
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.51'");
+    }
+
+
 
 }
 

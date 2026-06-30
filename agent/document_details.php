@@ -1,4 +1,5 @@
 <?php
+// ITFLOW_DIAGRAM_WHITEBOARD_PHASE2B
 // ITFLOW_DOCUMENT_TYPES_PHASE2A
 // ITFLOW_RENAME_FILES_SECTION_TO_DOCUMENTATION
 
@@ -38,6 +39,14 @@ $folder_name = nullable_htmlentities($row['folder_name']);
 $document_name = nullable_htmlentities($row['document_name']);
 $document_description = nullable_htmlentities($row['document_description']);
 $document_type = nullable_htmlentities($row['document_type'] ?? 'General');
+$document_diagram_data = nullable_htmlentities($row['document_diagram_data'] ?? '');
+$document_diagram_updated_at = nullable_htmlentities($row['document_diagram_updated_at'] ?? '');
+$document_diagram_enabled = in_array($document_type, [
+    'Diagram / Whiteboard',
+    'Network Diagram',
+    'Process Map',
+    'Mind Map',
+], true);
 $document_content = $purifier->purify($row['document_content']);
 $document_created_by_id = intval($row['document_created_by']);
 $document_created_by_name = nullable_htmlentities($row['user_name']);
@@ -135,7 +144,49 @@ $page_title = $row['document_name'];
                     </div>
                 </div>
             </div>
-            <div class="card-body prettyContent">
+            
+                <?php if ($document_diagram_enabled) { ?>
+                <div class="card-body border-bottom itflow-diagram-whiteboard" data-itflow-marker="ITFLOW_DIAGRAM_WHITEBOARD_PHASE2B">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div>
+                            <h5 class="mb-0"><i class="fas fa-project-diagram mr-2"></i>Diagram / Whiteboard</h5>
+                            <small class="text-muted">
+                                Enter one connection per line, for example:
+                                <code>Internet -> Firewall -> Switch -> Server</code>
+                            </small>
+                            <?php if ($document_diagram_updated_at) { ?>
+                                <div><small class="text-muted">Last diagram update: <?= $document_diagram_updated_at ?></small></div>
+                            <?php } ?>
+                        </div>
+                        <div class="d-print-none">
+                            <button type="button" class="btn btn-sm btn-secondary" id="itflowDiagramRenderButton">
+                                <i class="fas fa-sync-alt mr-1"></i>Render
+                            </button>
+                        </div>
+                    </div>
+
+                    <form action="post.php" method="post" class="d-print-none mb-3">
+                        <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                        <input type="hidden" name="document_id" value="<?= $document_id ?>">
+                        <div class="form-group">
+                            <label>Diagram Source</label>
+                            <textarea class="form-control" id="itflowDiagramSource" name="document_diagram_data" rows="8" spellcheck="false" placeholder="Internet -> Firewall&#10;Firewall -> Switch&#10;Switch -> Server&#10;Switch -> Workstations"><?= $document_diagram_data ?></textarea>
+                            <small class="form-text text-muted">
+                                Supports chains using <code>-></code>. Blank lines and lines starting with <code>#</code> are ignored.
+                            </small>
+                        </div>
+                        <button type="submit" name="save_document_diagram" class="btn btn-primary">
+                            <i class="fas fa-save mr-1"></i>Save Diagram
+                        </button>
+                    </form>
+
+                    <div class="border rounded bg-light p-2">
+                        <div id="itflowDiagramPreview" style="min-height: 260px; overflow-x: auto;"></div>
+                    </div>
+                </div>
+                <?php } ?>
+
+<div class="card-body prettyContent">
                 <?= $document_content ?>
                 <hr>
                 <h4>Documentation Revision History</h4>
@@ -435,6 +486,232 @@ $page_title = $row['document_name'];
     </div>
 
 </div>
+
+
+<?php if ($document_diagram_enabled) { ?>
+<script>
+(function () {
+    function svgEl(name) {
+        return document.createElementNS('http://www.w3.org/2000/svg', name);
+    }
+
+    function addText(svg, text, x, y, maxChars) {
+        var words = String(text || '').split(/\s+/);
+        var line = '';
+        var lines = [];
+
+        words.forEach(function (word) {
+            var candidate = line ? line + ' ' + word : word;
+            if (candidate.length > maxChars && line) {
+                lines.push(line);
+                line = word;
+            } else {
+                line = candidate;
+            }
+        });
+
+        if (line) {
+            lines.push(line);
+        }
+
+        if (!lines.length) {
+            lines = [''];
+        }
+
+        lines.slice(0, 3).forEach(function (part, index) {
+            var t = svgEl('text');
+            t.setAttribute('x', x);
+            t.setAttribute('y', y + (index * 16));
+            t.setAttribute('text-anchor', 'middle');
+            t.setAttribute('font-size', '12');
+            t.setAttribute('font-family', 'Arial, sans-serif');
+            t.setAttribute('fill', '#212529');
+            t.textContent = part;
+            svg.appendChild(t);
+        });
+    }
+
+    function parseDiagram(source) {
+        var nodes = [];
+        var nodeSeen = {};
+        var edges = [];
+
+        function addNode(name) {
+            name = String(name || '').trim();
+            if (!name) {
+                return null;
+            }
+
+            if (!nodeSeen[name]) {
+                nodeSeen[name] = true;
+                nodes.push(name);
+            }
+
+            return name;
+        }
+
+        String(source || '').split(/\r?\n/).forEach(function (line) {
+            line = line.trim();
+
+            if (!line || line.charAt(0) === '#') {
+                return;
+            }
+
+            var parts = line.split(/\s*(?:->|=>)\s*/).map(function (part) {
+                return part.trim();
+            }).filter(Boolean);
+
+            if (parts.length === 1) {
+                addNode(parts[0]);
+                return;
+            }
+
+            for (var i = 0; i < parts.length; i++) {
+                addNode(parts[i]);
+            }
+
+            for (var j = 0; j < parts.length - 1; j++) {
+                edges.push({ from: parts[j], to: parts[j + 1] });
+            }
+        });
+
+        return { nodes: nodes, edges: edges };
+    }
+
+    function renderDiagram() {
+        var source = document.getElementById('itflowDiagramSource');
+        var preview = document.getElementById('itflowDiagramPreview');
+
+        if (!source || !preview) {
+            return;
+        }
+
+        var diagram = parseDiagram(source.value);
+        preview.innerHTML = '';
+
+        if (!diagram.nodes.length) {
+            preview.innerHTML = '<div class="text-muted p-4 text-center">No diagram data yet. Add connections above and click Render.</div>';
+            return;
+        }
+
+        var levels = {};
+        diagram.nodes.forEach(function (node) {
+            levels[node] = 0;
+        });
+
+        for (var pass = 0; pass < diagram.nodes.length + 2; pass++) {
+            diagram.edges.forEach(function (edge) {
+                levels[edge.to] = Math.max(levels[edge.to] || 0, (levels[edge.from] || 0) + 1);
+            });
+        }
+
+        var groups = {};
+        var maxLevel = 0;
+
+        diagram.nodes.forEach(function (node) {
+            var level = levels[node] || 0;
+            maxLevel = Math.max(maxLevel, level);
+            if (!groups[level]) {
+                groups[level] = [];
+            }
+            groups[level].push(node);
+        });
+
+        var positions = {};
+        var nodeWidth = 170;
+        var nodeHeight = 58;
+        var xGap = 230;
+        var yGap = 92;
+        var margin = 40;
+        var maxRows = 1;
+
+        Object.keys(groups).forEach(function (levelKey) {
+            maxRows = Math.max(maxRows, groups[levelKey].length);
+            groups[levelKey].forEach(function (node, index) {
+                positions[node] = {
+                    x: margin + (parseInt(levelKey, 10) * xGap),
+                    y: margin + (index * yGap)
+                };
+            });
+        });
+
+        var width = Math.max(520, margin * 2 + nodeWidth + maxLevel * xGap);
+        var height = Math.max(260, margin * 2 + nodeHeight + (maxRows - 1) * yGap);
+
+        var svg = svgEl('svg');
+        svg.setAttribute('width', width);
+        svg.setAttribute('height', height);
+        svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
+        svg.setAttribute('role', 'img');
+        svg.setAttribute('aria-label', 'Document diagram');
+
+        var defs = svgEl('defs');
+        var marker = svgEl('marker');
+        marker.setAttribute('id', 'itflowDiagramArrow');
+        marker.setAttribute('markerWidth', '10');
+        marker.setAttribute('markerHeight', '10');
+        marker.setAttribute('refX', '9');
+        marker.setAttribute('refY', '3');
+        marker.setAttribute('orient', 'auto');
+        marker.setAttribute('markerUnits', 'strokeWidth');
+
+        var path = svgEl('path');
+        path.setAttribute('d', 'M0,0 L0,6 L9,3 z');
+        path.setAttribute('fill', '#495057');
+
+        marker.appendChild(path);
+        defs.appendChild(marker);
+        svg.appendChild(defs);
+
+        diagram.edges.forEach(function (edge) {
+            var from = positions[edge.from];
+            var to = positions[edge.to];
+
+            if (!from || !to) {
+                return;
+            }
+
+            var line = svgEl('line');
+            line.setAttribute('x1', from.x + nodeWidth);
+            line.setAttribute('y1', from.y + (nodeHeight / 2));
+            line.setAttribute('x2', to.x);
+            line.setAttribute('y2', to.y + (nodeHeight / 2));
+            line.setAttribute('stroke', '#495057');
+            line.setAttribute('stroke-width', '2');
+            line.setAttribute('marker-end', 'url(#itflowDiagramArrow)');
+            svg.appendChild(line);
+        });
+
+        diagram.nodes.forEach(function (node) {
+            var pos = positions[node];
+
+            var rect = svgEl('rect');
+            rect.setAttribute('x', pos.x);
+            rect.setAttribute('y', pos.y);
+            rect.setAttribute('width', nodeWidth);
+            rect.setAttribute('height', nodeHeight);
+            rect.setAttribute('rx', '9');
+            rect.setAttribute('fill', '#ffffff');
+            rect.setAttribute('stroke', '#343a40');
+            rect.setAttribute('stroke-width', '1.5');
+            svg.appendChild(rect);
+
+            addText(svg, node, pos.x + (nodeWidth / 2), pos.y + 25, 22);
+        });
+
+        preview.appendChild(svg);
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        var button = document.getElementById('itflowDiagramRenderButton');
+        if (button) {
+            button.addEventListener('click', renderDiagram);
+        }
+        renderDiagram();
+    });
+})();
+</script>
+<?php } ?>
 
 <script src="../js/pretty_content.js"></script>
 
