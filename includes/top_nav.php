@@ -93,6 +93,23 @@
 .itflow-quick-add-label {
     line-height: 1;
 }
+
+/* ITFLOW_QUICK_ADD_HEADER_STYLE */
+/* Make QUICK ADD read like a title/header, not a clickable menu option. */
+.itflow-quick-add-header {
+    margin: 0 0 0.35rem 0;
+    padding: 0.45rem 0.9rem;
+    background: #f1f3f5;
+    color: #6c757d;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    border-bottom: 1px solid #dee2e6;
+    cursor: default;
+    pointer-events: none;
+    user-select: none;
+}
 </style>
 
 <li class="nav-item dropdown" id="itflowGlobalQuickAdd">
@@ -100,7 +117,7 @@
         <span class="itflow-quick-add-content" data-itflow-marker="ITFLOW_QUICK_ADD_ICON_CONTENT"><i class="fas fa-plus itflow-quick-add-plus-icon" aria-hidden="true"></i><span class="itflow-quick-add-label d-none d-md-inline">New</span></span>
     </a>
     <div class="dropdown-menu dropdown-menu-left shadow" aria-labelledby="itflowGlobalQuickAddDropdown">
-        <h6 class="dropdown-header">Quick Add</h6>
+        <h6 class="dropdown-header itflow-quick-add-header" data-itflow-marker="ITFLOW_QUICK_ADD_HEADER">QUICK ADD</h6>
 
         <a class="dropdown-item ajax-modal" href="#" data-modal-url="modals/ticket/ticket_add_v2.php" data-modal-size="lg">
             <i class="fas fa-life-ring fa-fw mr-2"></i>New Ticket
