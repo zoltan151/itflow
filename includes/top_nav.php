@@ -152,15 +152,7 @@
     </div>
 </li>
 <!-- /ITFLOW_GLOBAL_QUICK_ADD_MENU -->
-<!-- ITFLOW_PLATFORM_ROADMAP_PHASE3B -->
-<li class="nav-item mr-2">
-        <i class="fas fa-map-signs mr-1"></i><span class="d-none d-md-inline">Roadmap</span>
-    </a>
-</li>
-
-
-
-        <form class="form-inline" action="/agent/global_search.php">
+<form class="form-inline" action="/agent/global_search.php">
             <div class="input-group input-group-sm">
                 <input class="form-control form-control-navbar" type="search" placeholder="Search everywhere" name="query"
                     value="<?php if (isset($_GET['query'])) { echo nullable_htmlentities($_GET['query']); } ?>">
