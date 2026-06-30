@@ -2,16 +2,15 @@
 // ITFLOW_PLATFORM_ROADMAP_PHASE3B
 // ITFLOW_ROADMAP_PHASE3E_PLANNING_FIELDS
 
-$itflow_modal_bootstrap = __DIR__ . "/../../includes/inc_all_modal.php";
+$itflow_agent_root = dirname(__DIR__, 2);
+$itflow_modal_bootstrap = $itflow_agent_root . "/includes/inc_all_modal.php";
 
-if (!is_file($itflow_modal_bootstrap)) {
-    $itflow_modal_bootstrap = dirname(__DIR__, 2) . "/includes/inc_all_modal.php";
-}
-
-if (!is_file($itflow_modal_bootstrap)) {
+if (!is_dir($itflow_agent_root) || !is_file($itflow_modal_bootstrap)) {
     http_response_code(500);
     exit("Unable to load ITFlow modal bootstrap");
 }
+
+chdir($itflow_agent_root);
 
 require_once $itflow_modal_bootstrap;
 
