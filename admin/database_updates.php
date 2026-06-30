@@ -5365,6 +5365,70 @@ END");
     }
 
 
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.56') {
+        // ITFLOW_ROADMAP_EDIT_500_ITEM_PHASE3G
+        mysqli_query($mysqli, "CREATE TABLE IF NOT EXISTS `roadmap_items` (
+            `roadmap_item_id` int(11) NOT NULL AUTO_INCREMENT,
+            `roadmap_item_title` varchar(255) NOT NULL,
+            `roadmap_item_description` text DEFAULT NULL,
+            `roadmap_item_category` varchar(64) NOT NULL DEFAULT 'Other',
+            `roadmap_item_status` varchar(64) NOT NULL DEFAULT 'Backlog',
+            `roadmap_item_priority` varchar(64) NOT NULL DEFAULT 'Medium',
+            `roadmap_item_target_version` varchar(64) DEFAULT NULL,
+            `roadmap_item_notes` text DEFAULT NULL,
+            `roadmap_item_created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `roadmap_item_updated_at` datetime DEFAULT NULL,
+            `roadmap_item_archived_at` datetime DEFAULT NULL,
+            `roadmap_item_created_by` int(11) NOT NULL DEFAULT 0,
+            `roadmap_item_updated_by` int(11) NOT NULL DEFAULT 0,
+            `roadmap_item_owner_id` int(11) NOT NULL DEFAULT 0,
+            `roadmap_item_effort` varchar(32) NOT NULL DEFAULT 'Medium',
+            `roadmap_item_impact` varchar(32) NOT NULL DEFAULT 'Medium',
+            `roadmap_item_complexity` varchar(32) NOT NULL DEFAULT 'Medium',
+            `roadmap_item_sort_order` int(11) NOT NULL DEFAULT 0,
+            `roadmap_item_pinned` tinyint(1) NOT NULL DEFAULT 0,
+            `roadmap_item_dependencies` text DEFAULT NULL,
+            PRIMARY KEY (`roadmap_item_id`),
+            KEY `roadmap_item_status` (`roadmap_item_status`),
+            KEY `roadmap_item_category` (`roadmap_item_category`),
+            KEY `roadmap_item_priority` (`roadmap_item_priority`),
+            KEY `roadmap_item_archived_at` (`roadmap_item_archived_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        $title = mysqli_real_escape_string($mysqli, 'Fix Roadmap Edit Modal HTTP 500');
+        $description = mysqli_real_escape_string($mysqli, 'Roadmap item edit modal still returns HTTP 500. Park this as the top pinned roadmap item until the actual modal response/fatal error can be captured and fixed.');
+        $existing_item = mysqli_query($mysqli, "SELECT roadmap_item_id FROM roadmap_items WHERE roadmap_item_title = '$title' LIMIT 1");
+
+        if ($existing_item && mysqli_num_rows($existing_item) == 0) {
+            mysqli_query($mysqli, "INSERT INTO roadmap_items SET
+                roadmap_item_title = '$title',
+                roadmap_item_description = '$description',
+                roadmap_item_category = 'Internal',
+                roadmap_item_status = 'Backlog',
+                roadmap_item_priority = 'Critical',
+                roadmap_item_effort = 'Small',
+                roadmap_item_impact = 'High',
+                roadmap_item_complexity = 'Medium',
+                roadmap_item_sort_order = -999999,
+                roadmap_item_pinned = 1,
+                roadmap_item_created_by = 0");
+        } else {
+            mysqli_query($mysqli, "UPDATE roadmap_items SET
+                roadmap_item_status = 'Backlog',
+                roadmap_item_priority = 'Critical',
+                roadmap_item_effort = 'Small',
+                roadmap_item_impact = 'High',
+                roadmap_item_complexity = 'Medium',
+                roadmap_item_sort_order = -999999,
+                roadmap_item_pinned = 1
+                WHERE roadmap_item_title = '$title'");
+        }
+
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.57'");
+    }
+
+
 }
 
 

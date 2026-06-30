@@ -29,6 +29,118 @@ require_once "../functions.php";
 require_once "../includes/load_global_settings.php";
 
 
+// ITFLOW_EMAIL_REPLY_REOPEN_ACTIVITY_LOG
+if (!function_exists('itflowLogEmailReplyTicketReopen')) {
+    function itflowLogEmailReplyTicketReopen($ticket_id, $client_id = 0, $previous_status = '')
+    {
+        global $mysqli;
+
+        $ticket_id = intval($ticket_id);
+        $client_id = intval($client_id);
+        $previous_status = trim((string)$previous_status);
+
+        if ($ticket_id <= 0 || !isset($mysqli)) {
+            return;
+        }
+
+        static $itflow_logged_email_reopens = [];
+
+        if (isset($itflow_logged_email_reopens[$ticket_id])) {
+            return;
+        }
+
+        $ticket_sql = mysqli_query($mysqli, "SELECT ticket_prefix, ticket_number, ticket_subject, ticket_client_id FROM tickets WHERE ticket_id = $ticket_id LIMIT 1");
+
+        if (!$ticket_sql || mysqli_num_rows($ticket_sql) == 0) {
+            return;
+        }
+
+        $ticket_row = mysqli_fetch_assoc($ticket_sql);
+
+        if ($client_id <= 0) {
+            $client_id = intval($ticket_row['ticket_client_id'] ?? 0);
+        }
+
+        $ticket_prefix = $ticket_row['ticket_prefix'] ?? '';
+        $ticket_number = $ticket_row['ticket_number'] ?? '';
+        $ticket_subject = $ticket_row['ticket_subject'] ?? '';
+
+        $ticket_label = trim($ticket_prefix . $ticket_number);
+        if ($ticket_label === '') {
+            $ticket_label = (string)$ticket_id;
+        }
+
+        $previous_status_message = '';
+        if ($previous_status !== '') {
+            $previous_status_message = " Previous status: $previous_status.";
+        }
+
+        $message = "Ticket #$ticket_label was automatically reopened because a customer replied by email.$previous_status_message";
+
+        if ($ticket_subject !== '') {
+            $message .= " Subject: $ticket_subject";
+        }
+
+        if (function_exists('logAction')) {
+            logAction("Ticket", "Reopen", $message, $client_id, $ticket_id);
+            $itflow_logged_email_reopens[$ticket_id] = true;
+            return;
+        }
+
+        $log_table_exists = mysqli_query($mysqli, "SHOW TABLES LIKE 'logs'");
+        if (!$log_table_exists || mysqli_num_rows($log_table_exists) == 0) {
+            return;
+        }
+
+        $columns = [];
+        $column_sql = mysqli_query($mysqli, "SHOW COLUMNS FROM logs");
+        if ($column_sql) {
+            while ($column = mysqli_fetch_assoc($column_sql)) {
+                $columns[$column['Field']] = true;
+            }
+        }
+
+        $insert = [];
+
+        if (isset($columns['log_type'])) {
+            $insert['log_type'] = 'Ticket';
+        }
+        if (isset($columns['log_action'])) {
+            $insert['log_action'] = 'Reopen';
+        }
+        if (isset($columns['log_description'])) {
+            $insert['log_description'] = $message;
+        }
+        if (isset($columns['log_client_id'])) {
+            $insert['log_client_id'] = $client_id;
+        }
+        if (isset($columns['log_item_id'])) {
+            $insert['log_item_id'] = $ticket_id;
+        }
+        if (isset($columns['log_created_at'])) {
+            $insert['log_created_at'] = date('Y-m-d H:i:s');
+        }
+
+        if (empty($insert)) {
+            return;
+        }
+
+        $sets = [];
+        foreach ($insert as $column => $value) {
+            $safe_column = preg_replace('/[^A-Za-z0-9_]/', '', $column);
+            $safe_value = mysqli_real_escape_string($mysqli, (string)$value);
+            $sets[] = "`$safe_column` = '$safe_value'";
+        }
+
+        mysqli_query($mysqli, "INSERT INTO logs SET " . implode(", ", $sets));
+
+        $itflow_logged_email_reopens[$ticket_id] = true;
+    }
+}
+
+
+
+
 // ITFLOW_EMAIL_PARSER_DISPLAY_NAME_CLEANUP
 if (!function_exists('parserCleanEmailDisplayName')) {
     function parserCleanEmailDisplayName(string $name, string $email = ''): string {
@@ -715,6 +827,7 @@ function addReply($from_email, $date, $subject, $ticket_number, $message, $attac
 
         if ($ticket_reply_type === 'Client') {
             mysqli_query($mysqli, "UPDATE tickets SET ticket_status = $reply_target_status_id, ticket_resolved_at = NULL WHERE ticket_id = $ticket_id AND ticket_client_id = $client_id LIMIT 1");
+        itflowLogEmailReplyTicketReopen(($ticket_id ?? 0), ($client_id ?? 0), ($ticket_status ?? ($old_ticket_status ?? ($previous_ticket_status ?? '')))); // ITFLOW_EMAIL_REPLY_REOPEN_ACTIVITY_LOG_CALL
             $status_changed_to_reply_target = ($reply_target_status_id > 0 && $previous_ticket_status_id !== $reply_target_status_id);
         }
 
