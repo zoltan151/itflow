@@ -5429,6 +5429,210 @@ END");
     }
 
 
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.57') {
+        // ITFLOW_ROADMAP_FOCUS_PRIORITIES_PHASE3H
+        mysqli_query($mysqli, "CREATE TABLE IF NOT EXISTS `roadmap_items` (
+            `roadmap_item_id` int(11) NOT NULL AUTO_INCREMENT,
+            `roadmap_item_title` varchar(255) NOT NULL,
+            `roadmap_item_description` text DEFAULT NULL,
+            `roadmap_item_category` varchar(64) NOT NULL DEFAULT 'Other',
+            `roadmap_item_status` varchar(64) NOT NULL DEFAULT 'Backlog',
+            `roadmap_item_priority` varchar(64) NOT NULL DEFAULT 'Medium',
+            `roadmap_item_target_version` varchar(64) DEFAULT NULL,
+            `roadmap_item_notes` text DEFAULT NULL,
+            `roadmap_item_created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `roadmap_item_updated_at` datetime DEFAULT NULL,
+            `roadmap_item_archived_at` datetime DEFAULT NULL,
+            `roadmap_item_created_by` int(11) NOT NULL DEFAULT 0,
+            `roadmap_item_updated_by` int(11) NOT NULL DEFAULT 0,
+            `roadmap_item_owner_id` int(11) NOT NULL DEFAULT 0,
+            `roadmap_item_effort` varchar(32) NOT NULL DEFAULT 'Medium',
+            `roadmap_item_impact` varchar(32) NOT NULL DEFAULT 'Medium',
+            `roadmap_item_complexity` varchar(32) NOT NULL DEFAULT 'Medium',
+            `roadmap_item_sort_order` int(11) NOT NULL DEFAULT 0,
+            `roadmap_item_pinned` tinyint(1) NOT NULL DEFAULT 0,
+            `roadmap_item_dependencies` text DEFAULT NULL,
+            PRIMARY KEY (`roadmap_item_id`),
+            KEY `roadmap_item_status` (`roadmap_item_status`),
+            KEY `roadmap_item_category` (`roadmap_item_category`),
+            KEY `roadmap_item_priority` (`roadmap_item_priority`),
+            KEY `roadmap_item_archived_at` (`roadmap_item_archived_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        $focus_roadmap_items = [
+            [
+                'Client SOP Center / Helpdesk Handoff Playbooks',
+                'Create structured client-specific SOPs and support playbooks so outsourced helpdesk partners like Flexis can handle tickets without tribal knowledge. Include client quirks, supported apps, escalation rules, common issues, access references, critical contacts, and handoff readiness guidance.',
+                'Documentation',
+                'Planned',
+                'Critical',
+                'Large',
+                'Critical',
+                'High',
+                -990000,
+                1
+            ],
+            [
+                'Client Onboarding Tracker / Funnel',
+                'Treat every client onboarding as a structured funnel with phases, prerequisites, tasks, owners, due dates, blockers, documentation requirements, completion percentage, and visual progress. Existing clients can be manually marked or backfilled to bring data up to speed.',
+                'Automation',
+                'Planned',
+                'Critical',
+                'Large',
+                'Critical',
+                'High',
+                -989000,
+                1
+            ],
+            [
+                'Automated Onboarding Communications',
+                'Automate client onboarding communication with event-triggered and scheduled emails that set expectations, explain next steps, provide progress updates, request missing information, notify about blockers, and keep clients informed without manual follow-up.',
+                'Automation',
+                'Planned',
+                'Critical',
+                'Medium',
+                'Critical',
+                'Medium',
+                -988000,
+                1
+            ],
+            [
+                'Client New Hire Onboarding Workflows',
+                'Create repeatable workflows for onboarding client employees, including request intake, approvals, start dates, licenses, groups, devices, VoIP extensions, MFA, application access, hardware, and first-day verification.',
+                'Automation',
+                'Planned',
+                'Critical',
+                'Large',
+                'Critical',
+                'High',
+                -987000,
+                1
+            ],
+            [
+                'Self-Help Tray Agent / Support Launcher',
+                'Deploy a lightweight client tray agent that reduces ticket volume and funnels support into the right channel. Include submit-ticket, support status, maintenance guidance, device health warnings, links to approved resources, contact rules, and future AI helpdesk/chatbot capabilities.',
+                'Automation',
+                'Planned',
+                'Critical',
+                'Large',
+                'Critical',
+                'High',
+                -986000,
+                1
+            ],
+            [
+                'Automated Client Reporting Emails',
+                'Send scheduled client-facing reports by email showing value delivered, ticket summaries, security posture, backup status, documentation progress, onboarding progress, recommendations, and upcoming work.',
+                'Reporting',
+                'Planned',
+                'High',
+                'Medium',
+                'High',
+                'Medium',
+                -985000,
+                1
+            ],
+            [
+                'Client Value Newsletter / Regular Communication Engine',
+                'Create recurring client communication such as newsletters, service updates, security tips, reminders, product updates, and proactive guidance so clients continue feeling value even during quiet months.',
+                'Automation',
+                'Backlog',
+                'High',
+                'Medium',
+                'High',
+                'Medium',
+                -984000,
+                1
+            ],
+            [
+                'Helpdesk Readiness Score',
+                'Score each client for outsourced helpdesk readiness based on SOP completeness, escalation contacts, supported applications, RMM/remote access, credentials, vendors, VoIP documentation, backup documentation, network diagrams, and known issues.',
+                'Reporting',
+                'Planned',
+                'Critical',
+                'Medium',
+                'Critical',
+                'Medium',
+                -983000,
+                1
+            ],
+            [
+                'Ticket-to-SOP and KB Suggestions',
+                'Suggest relevant client SOPs, KBs, similar tickets, credentials, assets, known issues, and next steps inside tickets so technicians and outsourced helpdesk partners can resolve issues faster.',
+                'AI',
+                'Planned',
+                'High',
+                'Large',
+                'High',
+                'High',
+                -982000,
+                1
+            ]
+        ];
+
+        foreach ($focus_roadmap_items as $item) {
+            $title = mysqli_real_escape_string($mysqli, $item[0]);
+            $description = mysqli_real_escape_string($mysqli, $item[1]);
+            $category = mysqli_real_escape_string($mysqli, $item[2]);
+            $status = mysqli_real_escape_string($mysqli, $item[3]);
+            $priority = mysqli_real_escape_string($mysqli, $item[4]);
+            $effort = mysqli_real_escape_string($mysqli, $item[5]);
+            $impact = mysqli_real_escape_string($mysqli, $item[6]);
+            $complexity = mysqli_real_escape_string($mysqli, $item[7]);
+            $sort_order = intval($item[8]);
+            $pinned = intval($item[9]);
+
+            $existing_item = mysqli_query($mysqli, "SELECT roadmap_item_id FROM roadmap_items WHERE roadmap_item_title = '$title' LIMIT 1");
+
+            if ($existing_item && mysqli_num_rows($existing_item) == 0) {
+                mysqli_query($mysqli, "INSERT INTO roadmap_items SET
+                    roadmap_item_title = '$title',
+                    roadmap_item_description = '$description',
+                    roadmap_item_category = '$category',
+                    roadmap_item_status = '$status',
+                    roadmap_item_priority = '$priority',
+                    roadmap_item_effort = '$effort',
+                    roadmap_item_impact = '$impact',
+                    roadmap_item_complexity = '$complexity',
+                    roadmap_item_sort_order = $sort_order,
+                    roadmap_item_pinned = $pinned,
+                    roadmap_item_created_by = 0");
+            } else {
+                mysqli_query($mysqli, "UPDATE roadmap_items SET
+                    roadmap_item_description = '$description',
+                    roadmap_item_category = '$category',
+                    roadmap_item_status = '$status',
+                    roadmap_item_priority = '$priority',
+                    roadmap_item_effort = '$effort',
+                    roadmap_item_impact = '$impact',
+                    roadmap_item_complexity = '$complexity',
+                    roadmap_item_sort_order = $sort_order,
+                    roadmap_item_pinned = $pinned
+                    WHERE roadmap_item_title = '$title'");
+            }
+        }
+
+        $existing_tray = mysqli_query($mysqli, "SELECT roadmap_item_id FROM roadmap_items WHERE roadmap_item_title = 'Interactive Tray Agent / Endpoint Assistant' LIMIT 1");
+        if ($existing_tray && mysqli_num_rows($existing_tray) > 0) {
+            mysqli_query($mysqli, "UPDATE roadmap_items SET
+                roadmap_item_title = 'Interactive Tray Agent / Endpoint Assistant',
+                roadmap_item_description = 'Deploy an interactive workstation and server tray agent with live status, alerts, maintenance warnings, submit-ticket workflow, reports, self-help links, proper support-channel funneling, and a future AI helpdesk chatbot that can use ITFlow documentation and KB context.',
+                roadmap_item_category = 'Automation',
+                roadmap_item_status = 'Planned',
+                roadmap_item_priority = 'Critical',
+                roadmap_item_effort = 'Large',
+                roadmap_item_impact = 'Critical',
+                roadmap_item_complexity = 'Very High',
+                roadmap_item_sort_order = -986500,
+                roadmap_item_pinned = 1
+                WHERE roadmap_item_title = 'Interactive Tray Agent / Endpoint Assistant'");
+        }
+
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.58'");
+    }
+
+
 }
 
 
