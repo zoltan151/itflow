@@ -238,35 +238,37 @@ $sql_roadmap_items = mysqli_query(
         <h3 class="card-title mt-2">
             <i class="fas fa-fw fa-map-signs mr-2"></i>InfoTech Infrastructure Roadmap
         </h3>
+</div>
 
+    
 <!-- ITFLOW_ROADMAP_ACTION_ROW -->
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <div>
-        <!-- ITFLOW_ROADMAP_VIEW_TOGGLE -->
-        <div class="btn-group" role="group" aria-label="Roadmap view toggle">
-            <a href="roadmap.php" class="btn btn-primary active">
-                <i class="fas fa-th-large mr-1"></i> Card View
-            </a>
-            <a href="roadmap_visual.php" class="btn btn-outline-primary">
-                <i class="fas fa-stream mr-1"></i> Timeline View
-            </a>
+<div class="card-body border-bottom bg-light py-3">
+    <div class="d-flex justify-content-between align-items-center flex-wrap">
+        <div class="mb-2 mb-md-0">
+            <!-- ITFLOW_ROADMAP_VIEW_TOGGLE -->
+            <div class="btn-group" role="group" aria-label="Roadmap view toggle">
+                <a href="roadmap.php" class="btn btn-primary active">
+                    <i class="fas fa-th-large mr-1"></i> Card View
+                </a>
+                <a href="roadmap_visual.php" class="btn btn-outline-primary">
+                    <i class="fas fa-stream mr-1"></i> Timeline View
+                </a>
+            </div>
+            <!-- /ITFLOW_ROADMAP_VIEW_TOGGLE -->
         </div>
-        <!-- /ITFLOW_ROADMAP_VIEW_TOGGLE -->
-    </div>
-    <div>
-        <!-- ITFLOW_ROADMAP_ADD_ACTION -->
-        <?php if (lookupUserPermission("module_config") >= 2) { ?>
-            <button type="button" class="btn btn-primary ajax-modal" data-modal-url="modals/roadmap/roadmap_add.php" data-modal-size="lg">
-                <i class="fas fa-fw fa-plus mr-1"></i> Add Roadmap Item
-            </button>
-        <?php } ?>
-        <!-- /ITFLOW_ROADMAP_ADD_ACTION -->
+        <div>
+            <!-- ITFLOW_ROADMAP_ADD_ACTION -->
+            <?php if (lookupUserPermission("module_config") >= 2) { ?>
+                <button type="button" class="btn btn-primary ajax-modal" data-modal-url="modals/roadmap/roadmap_add.php" data-modal-size="lg">
+                    <i class="fas fa-fw fa-plus mr-1"></i> Add Roadmap Item
+                </button>
+            <?php } ?>
+            <!-- /ITFLOW_ROADMAP_ADD_ACTION -->
+        </div>
     </div>
 </div>
 <!-- /ITFLOW_ROADMAP_ACTION_ROW -->
-</div>
-
-    <div class="card-body border-bottom">
+<div class="card-body border-bottom">
         <div class="row text-center">
             <div class="col-md-3 col-6 mb-2">
                 <div class="border rounded p-2 bg-light">
