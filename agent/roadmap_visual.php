@@ -74,15 +74,16 @@ if ($has_roadmap) {
 .itflow-vops-board{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem}
 </style>
 
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <div>
-        <h3 class="mb-0">InfoTech Infrastructure Roadmap</h3>
-        <div class="text-muted">Visual roadmap for ITFlow, RMM, backups, integrations, automation, and infrastructure improvements</div>
+
+<div class="card card-dark">
+    <div class="card-header py-2">
+        <h3 class="card-title mt-2">
+            <i class="fas fa-fw fa-map-signs mr-2"></i>InfoTech Infrastructure Roadmap
+        </h3>
     </div>
-</div>
-<!-- ITFLOW_ROADMAP_ACTION_ROW -->
-<div class="card mb-3">
-    <div class="card-body bg-light py-3">
+
+    <!-- ITFLOW_ROADMAP_ACTION_ROW -->
+    <div class="card-body border-bottom bg-light py-3">
         <div class="d-flex justify-content-between align-items-center flex-wrap">
             <div class="mb-2 mb-md-0">
                 <!-- ITFLOW_ROADMAP_VIEW_TOGGLE -->
@@ -107,19 +108,21 @@ if ($has_roadmap) {
             </div>
         </div>
     </div>
-</div>
-<!-- /ITFLOW_ROADMAP_ACTION_ROW -->
-
+    <!-- /ITFLOW_ROADMAP_ACTION_ROW -->
 
 <?php if (!$has_roadmap) { ?>
     <div class="alert alert-warning">Roadmap table is not available yet.</div>
 <?php } ?>
 
+<div class="card-body border-bottom">
 <div class="row">
     <div class="col-md-3"><div class="itflow-vops-card"><div class="text-muted">Active Initiatives</div><h2><?= intval($summary['active']) ?></h2></div></div>
     <div class="col-md-3"><div class="itflow-vops-card"><div class="text-muted">In Development</div><h2><?= intval($summary['dev']) ?></h2></div></div>
     <div class="col-md-3"><div class="itflow-vops-card"><div class="text-muted">High Priority</div><h2><?= intval($summary['high']) ?></h2></div></div>
     <div class="col-md-3"><div class="itflow-vops-card"><div class="text-muted">Shipped / Complete</div><h2><?= intval($summary['shipped']) ?></h2></div></div>
+</div>
+
+</div>
 </div>
 
 <div class="itflow-vops-board">
