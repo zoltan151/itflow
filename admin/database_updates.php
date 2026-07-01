@@ -5633,6 +5633,152 @@ END");
     }
 
 
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.58') {
+        // ITFLOW_VISUAL_OPS_V1
+
+        $roadmap_columns = [
+            'roadmap_item_start_date' => "ALTER TABLE `roadmap_items` ADD `roadmap_item_start_date` date DEFAULT NULL AFTER `roadmap_item_dependencies`",
+            'roadmap_item_target_date' => "ALTER TABLE `roadmap_items` ADD `roadmap_item_target_date` date DEFAULT NULL AFTER `roadmap_item_start_date`",
+            'roadmap_item_progress' => "ALTER TABLE `roadmap_items` ADD `roadmap_item_progress` tinyint(3) NOT NULL DEFAULT 0 AFTER `roadmap_item_target_date`",
+            'roadmap_item_lane' => "ALTER TABLE `roadmap_items` ADD `roadmap_item_lane` varchar(64) DEFAULT NULL AFTER `roadmap_item_progress`"
+        ];
+
+        foreach ($roadmap_columns as $column => $alter_sql) {
+            $column_exists = mysqli_query($mysqli, "SHOW COLUMNS FROM `roadmap_items` LIKE '$column'");
+            if ($column_exists && mysqli_num_rows($column_exists) == 0) {
+                mysqli_query($mysqli, $alter_sql);
+            }
+        }
+
+        mysqli_query($mysqli, "CREATE TABLE IF NOT EXISTS `client_onboardings` (
+            `onboarding_id` int(11) NOT NULL AUTO_INCREMENT,
+            `onboarding_client_id` int(11) NOT NULL,
+            `onboarding_phase` varchar(64) NOT NULL DEFAULT 'Backfill Needed',
+            `onboarding_status` varchar(64) NOT NULL DEFAULT 'Needs Review',
+            `onboarding_owner_id` int(11) NOT NULL DEFAULT 0,
+            `onboarding_completion` tinyint(3) NOT NULL DEFAULT 0,
+            `onboarding_target_go_live` date DEFAULT NULL,
+            `onboarding_blocked` tinyint(1) NOT NULL DEFAULT 0,
+            `onboarding_blocker_note` text DEFAULT NULL,
+            `onboarding_notes` text DEFAULT NULL,
+            `onboarding_created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `onboarding_updated_at` datetime DEFAULT NULL,
+            PRIMARY KEY (`onboarding_id`),
+            UNIQUE KEY `onboarding_client_id` (`onboarding_client_id`),
+            KEY `onboarding_phase` (`onboarding_phase`),
+            KEY `onboarding_status` (`onboarding_status`),
+            KEY `onboarding_owner_id` (`onboarding_owner_id`),
+            KEY `onboarding_target_go_live` (`onboarding_target_go_live`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        mysqli_query($mysqli, "CREATE TABLE IF NOT EXISTS `client_onboarding_tasks` (
+            `task_id` int(11) NOT NULL AUTO_INCREMENT,
+            `task_onboarding_id` int(11) NOT NULL,
+            `task_phase` varchar(64) NOT NULL DEFAULT 'Discovery',
+            `task_name` varchar(255) NOT NULL,
+            `task_status` varchar(64) NOT NULL DEFAULT 'Pending',
+            `task_owner_id` int(11) NOT NULL DEFAULT 0,
+            `task_due_date` date DEFAULT NULL,
+            `task_sort_order` int(11) NOT NULL DEFAULT 0,
+            `task_created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `task_completed_at` datetime DEFAULT NULL,
+            PRIMARY KEY (`task_id`),
+            KEY `task_onboarding_id` (`task_onboarding_id`),
+            KEY `task_phase` (`task_phase`),
+            KEY `task_status` (`task_status`),
+            KEY `task_due_date` (`task_due_date`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        mysqli_query($mysqli, "CREATE TABLE IF NOT EXISTS `employee_lifecycle_items` (
+            `employee_lifecycle_id` int(11) NOT NULL AUTO_INCREMENT,
+            `employee_lifecycle_client_id` int(11) NOT NULL,
+            `employee_lifecycle_type` varchar(32) NOT NULL DEFAULT 'Onboarding',
+            `employee_name` varchar(255) NOT NULL,
+            `employee_title` varchar(255) DEFAULT NULL,
+            `employee_email` varchar(255) DEFAULT NULL,
+            `employee_start_date` date DEFAULT NULL,
+            `employee_stage` varchar(64) NOT NULL DEFAULT 'Request Received',
+            `employee_status` varchar(64) NOT NULL DEFAULT 'New',
+            `employee_risk` varchar(64) NOT NULL DEFAULT 'Normal',
+            `employee_assigned_user_id` int(11) NOT NULL DEFAULT 0,
+            `employee_completion` tinyint(3) NOT NULL DEFAULT 0,
+            `employee_notes` text DEFAULT NULL,
+            `employee_created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `employee_updated_at` datetime DEFAULT NULL,
+            PRIMARY KEY (`employee_lifecycle_id`),
+            KEY `employee_lifecycle_client_id` (`employee_lifecycle_client_id`),
+            KEY `employee_lifecycle_type` (`employee_lifecycle_type`),
+            KEY `employee_stage` (`employee_stage`),
+            KEY `employee_status` (`employee_status`),
+            KEY `employee_start_date` (`employee_start_date`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        mysqli_query($mysqli, "CREATE TABLE IF NOT EXISTS `employee_lifecycle_tasks` (
+            `employee_task_id` int(11) NOT NULL AUTO_INCREMENT,
+            `employee_task_lifecycle_id` int(11) NOT NULL,
+            `employee_task_name` varchar(255) NOT NULL,
+            `employee_task_stage` varchar(64) NOT NULL DEFAULT 'Request Received',
+            `employee_task_status` varchar(64) NOT NULL DEFAULT 'Pending',
+            `employee_task_owner_id` int(11) NOT NULL DEFAULT 0,
+            `employee_task_due_date` date DEFAULT NULL,
+            `employee_task_sort_order` int(11) NOT NULL DEFAULT 0,
+            `employee_task_created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `employee_task_completed_at` datetime DEFAULT NULL,
+            PRIMARY KEY (`employee_task_id`),
+            KEY `employee_task_lifecycle_id` (`employee_task_lifecycle_id`),
+            KEY `employee_task_stage` (`employee_task_stage`),
+            KEY `employee_task_status` (`employee_task_status`),
+            KEY `employee_task_due_date` (`employee_task_due_date`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        mysqli_query($mysqli, "INSERT IGNORE INTO `client_onboardings`
+            (`onboarding_client_id`, `onboarding_phase`, `onboarding_status`, `onboarding_completion`, `onboarding_notes`)
+            SELECT `client_id`, 'Backfill Needed', 'Needs Review', 0, 'Existing client imported into onboarding tracker for manual backfill.'
+            FROM `clients`");
+
+        $visual_roadmap_defaults = [
+            ['Client SOP Center / Helpdesk Handoff Playbooks', '2026-07-01', '2026-09-30', 15, 'Documentation'],
+            ['Client Onboarding Tracker / Funnel', '2026-07-01', '2026-10-31', 20, 'Onboarding'],
+            ['Automated Onboarding Communications', '2026-08-01', '2026-11-30', 0, 'Automation'],
+            ['Client New Hire Onboarding Workflows', '2026-09-01', '2026-12-31', 0, 'Onboarding'],
+            ['Interactive Tray Agent / Endpoint Assistant', '2026-10-01', '2027-03-31', 0, 'AI / Tray Agent'],
+            ['Self-Help Tray Agent / Support Launcher', '2026-10-01', '2027-03-31', 0, 'AI / Tray Agent'],
+            ['Automated Client Reporting Emails', '2026-08-01', '2026-12-31', 0, 'Automation'],
+            ['Client Value Newsletter / Regular Communication Engine', '2026-10-01', '2027-02-28', 0, 'Automation'],
+            ['Helpdesk Readiness Score', '2026-08-01', '2026-11-30', 0, 'Documentation'],
+            ['Ticket-to-SOP and KB Suggestions', '2027-01-01', '2027-06-30', 0, 'AI / Tray Agent'],
+            ['RMM Integration Improvements', '2026-07-01', '2026-12-31', 40, 'Integrations'],
+            ['Diagram / Whiteboard Improvements', '2026-10-01', '2027-03-31', 30, 'Documentation'],
+            ['Microsoft 365 / Entra ID Auto-Documentation', '2026-10-01', '2027-03-31', 0, 'Integrations'],
+            ['Google Workspace Auto-Documentation', '2026-10-01', '2027-03-31', 0, 'Integrations'],
+            ['VoIP Platform Integration', '2027-01-01', '2027-06-30', 0, 'Integrations'],
+            ['UniFi Integration', '2027-01-01', '2027-06-30', 0, 'Integrations'],
+            ['UISP Integration', '2027-01-01', '2027-06-30', 0, 'Integrations'],
+            ['Bitdefender Integration', '2027-01-01', '2027-06-30', 0, 'Integrations'],
+            ['UrBackup Integration', '2027-01-01', '2027-06-30', 0, 'Integrations'],
+            ['Inventory Replenishment Tracking and Auto Tickets', '2026-10-01', '2027-03-31', 0, 'Automation']
+        ];
+
+        foreach ($visual_roadmap_defaults as $item) {
+            $title = mysqli_real_escape_string($mysqli, $item[0]);
+            $start_date = mysqli_real_escape_string($mysqli, $item[1]);
+            $target_date = mysqli_real_escape_string($mysqli, $item[2]);
+            $progress = intval($item[3]);
+            $lane = mysqli_real_escape_string($mysqli, $item[4]);
+
+            mysqli_query($mysqli, "UPDATE `roadmap_items` SET
+                `roadmap_item_start_date` = '$start_date',
+                `roadmap_item_target_date` = '$target_date',
+                `roadmap_item_progress` = $progress,
+                `roadmap_item_lane` = '$lane'
+                WHERE `roadmap_item_title` = '$title'");
+        }
+
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.59'");
+    }
+
+
 }
 
 

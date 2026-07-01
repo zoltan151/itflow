@@ -486,10 +486,38 @@
 
                 <?php } ?>
 <!-- ITFLOW_PLATFORM_ROADMAP_SIDEBAR_LINK -->
+
+<!-- ITFLOW_VISUAL_OPS_V1_NAV -->
+<li class="nav-header">OPERATIONS</li>
+
+<li class="nav-item">
+    <a href="client_onboarding.php" class="nav-link <?php if (basename($_SERVER["PHP_SELF"]) == "client_onboarding.php") { echo "active"; } ?>">
+        <i class="nav-icon fas fa-project-diagram"></i>
+        <p>Onboarding</p>
+    </a>
+</li>
+
+<li class="nav-item">
+    <a href="people_ops.php" class="nav-link <?php if (basename($_SERVER["PHP_SELF"]) == "people_ops.php") { echo "active"; } ?>">
+        <i class="nav-icon fas fa-user-check"></i>
+        <p>People Ops</p>
+    </a>
+</li>
+
+<li class="nav-header">DOCUMENTATION</li>
+
+<li class="nav-item">
+    <a href="sop_center.php" class="nav-link <?php if (basename($_SERVER["PHP_SELF"]) == "sop_center.php") { echo "active"; } ?>">
+        <i class="nav-icon fas fa-book-open"></i>
+        <p>SOP Center</p>
+    </a>
+</li>
+<!-- /ITFLOW_VISUAL_OPS_V1_NAV -->
+
 <li class="nav-header">PLATFORM</li>
 
 <li class="nav-item">
-    <a href="roadmap.php" class="nav-link <?php if (basename($_SERVER["PHP_SELF"]) == "roadmap.php") { echo "active"; } ?>">
+    <a href="roadmap_visual.php" class="nav-link <?php if (in_array(basename($_SERVER["PHP_SELF"]), ["roadmap.php", "roadmap_visual.php"])) { echo "active"; } ?>">
         <i class="nav-icon fas fa-map-signs"></i>
         <p>Roadmap</p>
     </a>
