@@ -92,6 +92,29 @@ if ($has_roadmap) {
 }
 /* /ITFLOW_ROADMAP_TIMELINE_ACTION_STYLE */
 
+
+/* ITFLOW_ROADMAP_TIMELINE_DROPDOWN_STYLE */
+.itflow-vops-item {
+    overflow: visible;
+}
+.itflow-vops-lane {
+    overflow: visible;
+}
+.itflow-vops-board {
+    overflow: visible;
+}
+.itflow-vops-item-actions {
+    position: relative;
+    z-index: 20;
+}
+.itflow-vops-item-actions .dropdown-menu {
+    z-index: 2050;
+}
+.itflow-vops-item-actions .dropdown-menu.show {
+    display: block;
+}
+/* /ITFLOW_ROADMAP_TIMELINE_DROPDOWN_STYLE */
+
 </style>
 
 
@@ -158,7 +181,7 @@ if ($has_roadmap) {
                     </div>
                     <?php if (lookupUserPermission("module_config") >= 2) { ?>
                         <div class="dropdown itflow-vops-item-actions">
-                            <button class="btn btn-sm btn-light dropdown-toggle" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" title="Roadmap item actions">
+                            <button class="btn btn-sm btn-light dropdown-toggle itflow-roadmap-timeline-action-toggle" type="button" data-toggle="dropdown" data-boundary="viewport" aria-haspopup="true" aria-expanded="false" title="Roadmap item actions">
                                 <i class="fas fa-ellipsis-v"></i>
                                 <span class="sr-only">Roadmap item actions</span>
                             </button>
@@ -611,6 +634,92 @@ if ($has_roadmap) {
     </div>
 <?php } ?>
 <!-- /ITFLOW_ROADMAP_EDIT_INLINE_MODAL -->
+
+
+<!-- ITFLOW_ROADMAP_TIMELINE_DROPDOWN_FALLBACK -->
+<script>
+(function() {
+    function closeTimelineRoadmapDropdowns(exceptMenu) {
+        var openMenus = document.querySelectorAll('.itflow-vops-item-actions .dropdown-menu.show');
+
+        for (var i = 0; i < openMenus.length; i++) {
+            if (exceptMenu && openMenus[i] === exceptMenu) {
+                continue;
+            }
+
+            openMenus[i].classList.remove('show');
+
+            var parent = openMenus[i].closest('.dropdown');
+            if (parent) {
+                parent.classList.remove('show');
+            }
+
+            var toggle = parent ? parent.querySelector('.itflow-roadmap-timeline-action-toggle') : null;
+            if (toggle) {
+                toggle.setAttribute('aria-expanded', 'false');
+            }
+        }
+    }
+
+    document.addEventListener('click', function(event) {
+        var toggle = event.target.closest('.itflow-roadmap-timeline-action-toggle');
+
+        if (!toggle) {
+            if (!event.target.closest('.itflow-vops-item-actions .dropdown-menu')) {
+                closeTimelineRoadmapDropdowns(null);
+            }
+            return;
+        }
+
+        var dropdown = toggle.closest('.dropdown');
+        var menu = dropdown ? dropdown.querySelector('.dropdown-menu') : null;
+
+        if (!dropdown || !menu) {
+            return;
+        }
+
+        var bootstrapDropdownAvailable = false;
+
+        if (window.jQuery && typeof window.jQuery.fn.dropdown === 'function') {
+            bootstrapDropdownAvailable = true;
+        }
+
+        if (window.bootstrap && typeof window.bootstrap.Dropdown === 'function') {
+            bootstrapDropdownAvailable = true;
+        }
+
+        /*
+         * Bootstrap's handler is not firing reliably on the visual roadmap page,
+         * so manually toggle the menu in capture phase. This is intentionally
+         * scoped to timeline roadmap item action buttons only.
+         */
+        event.preventDefault();
+        event.stopPropagation();
+
+        var willOpen = !menu.classList.contains('show');
+
+        closeTimelineRoadmapDropdowns(menu);
+
+        if (willOpen) {
+            dropdown.classList.add('show');
+            menu.classList.add('show');
+            toggle.setAttribute('aria-expanded', 'true');
+        } else {
+            dropdown.classList.remove('show');
+            menu.classList.remove('show');
+            toggle.setAttribute('aria-expanded', 'false');
+        }
+    }, true);
+
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            closeTimelineRoadmapDropdowns(null);
+        }
+    });
+})();
+</script>
+<!-- /ITFLOW_ROADMAP_TIMELINE_DROPDOWN_FALLBACK -->
+
 
 <!-- ITFLOW_ROADMAP_EDIT_INLINE_MODAL_SCRIPT -->
 <script>
