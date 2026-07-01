@@ -79,10 +79,16 @@ if ($has_roadmap) {
         <h3 class="mb-0">InfoTech Infrastructure Roadmap</h3>
         <div class="text-muted">Visual roadmap for ITFlow, RMM, backups, integrations, automation, and infrastructure improvements</div>
     </div>
-    <div>
-        <a href="roadmap.php" class="btn btn-outline-secondary">Classic Board</a>
-        <a href="roadmap_visual.php" class="btn btn-primary">Visual Roadmap</a>
-    </div>
+<!-- ITFLOW_ROADMAP_VIEW_TOGGLE -->
+<div class="btn-group" role="group" aria-label="Roadmap view toggle">
+    <a href="roadmap.php" class="btn btn-outline-primary">
+        <i class="fas fa-th-large mr-1"></i> Card View
+    </a>
+    <a href="roadmap_visual.php" class="btn btn-primary active">
+        <i class="fas fa-stream mr-1"></i> Timeline View
+    </a>
+</div>
+<!-- /ITFLOW_ROADMAP_VIEW_TOGGLE -->
 </div>
 
 <?php if (!$has_roadmap) { ?>
