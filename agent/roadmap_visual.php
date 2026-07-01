@@ -100,7 +100,7 @@ if ($has_roadmap) {
             <div>
                 <!-- ITFLOW_ROADMAP_ADD_ACTION -->
                 <?php if (lookupUserPermission("module_config") >= 2) { ?>
-                    <button type="button" class="btn btn-primary ajax-modal itflow-roadmap-add-action" data-modal-url="modals/roadmap_add.php" data-modal-size="lg">
+                    <button type="button" class="btn btn-primary itflow-roadmap-add-action" data-toggle="modal" data-target="#addRoadmapItemModal" data-bs-toggle="modal" data-bs-target="#addRoadmapItemModal">
                         <i class="fas fa-fw fa-plus mr-1"></i> Add Roadmap Item
                     </button>
                 <?php } ?>
@@ -145,11 +145,163 @@ if ($has_roadmap) {
     <?php } ?>
 </div>
 
-<!-- ITFLOW_ROADMAP_ADD_MODAL_FALLBACK -->
-<div id="itflowRoadmapAddModalFallbackContainer"></div>
+<!-- ITFLOW_ROADMAP_ADD_INLINE_MODAL -->
+<?php if (lookupUserPermission("module_config") >= 2) { ?>
+    <?php
+    $roadmap_add_statuses = ['Backlog', 'Planned', 'In Development', 'Coming Soon', 'Shipped'];
+    $roadmap_add_categories = ['Documentation', 'Credentials', 'Client Portal', 'Automation', 'Integrations', 'AI', 'Reporting', 'Security', 'Other'];
+    $roadmap_add_priorities = ['Low', 'Medium', 'High', 'Critical'];
+    $roadmap_add_efforts = ['Tiny', 'Small', 'Medium', 'Large', 'XL'];
+    $roadmap_add_impacts = ['Low', 'Medium', 'High', 'Critical'];
+    $roadmap_add_complexities = ['Low', 'Medium', 'High', 'Very High'];
+    $sql_roadmap_add_users = mysqli_query($mysqli, "SELECT user_id, user_name FROM users ORDER BY user_name ASC");
+    ?>
+
+    <div class="modal fade" id="addRoadmapItemModal" tabindex="-1" role="dialog" aria-labelledby="addRoadmapItemModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content bg-light">
+                <form action="post.php" method="post" autocomplete="off">
+                    <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+
+                    <div class="modal-header bg-dark">
+                        <h5 class="modal-title text-white" id="addRoadmapItemModalLabel">
+                            <i class="fas fa-map-signs mr-2"></i>Add Roadmap Item
+                        </h5>
+                        <button type="button" class="close text-white itflow-roadmap-add-modal-close" data-dismiss="modal" data-bs-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+
+                    <div class="modal-body">
+
+                        <div class="form-group">
+                            <label>Title <strong class="text-danger">*</strong></label>
+                            <input type="text" class="form-control" name="roadmap_item_title" maxlength="255" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Description</label>
+                            <textarea class="form-control" name="roadmap_item_description" rows="4"></textarea>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group col-md-4">
+                                <label>Category</label>
+                                <select class="form-control select2" name="roadmap_item_category">
+                                    <?php foreach ($roadmap_add_categories as $category) { ?>
+                                        <option value="<?= nullable_htmlentities($category) ?>"><?= nullable_htmlentities($category) ?></option>
+                                    <?php } ?>
+                                </select>
+                            </div>
+
+                            <div class="form-group col-md-4">
+                                <label>Status</label>
+                                <select class="form-control select2" name="roadmap_item_status">
+                                    <?php foreach ($roadmap_add_statuses as $status) { ?>
+                                        <option value="<?= nullable_htmlentities($status) ?>"><?= nullable_htmlentities($status) ?></option>
+                                    <?php } ?>
+                                </select>
+                            </div>
+
+                            <div class="form-group col-md-4">
+                                <label>Priority</label>
+                                <select class="form-control select2" name="roadmap_item_priority">
+                                    <?php foreach ($roadmap_add_priorities as $priority) { ?>
+                                        <option value="<?= nullable_htmlentities($priority) ?>" <?php if ($priority == 'Medium') { echo 'selected'; } ?>><?= nullable_htmlentities($priority) ?></option>
+                                    <?php } ?>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group col-md-4">
+                                <label>Owner</label>
+                                <select class="form-control select2" name="roadmap_item_owner_id">
+                                    <option value="0">Unassigned</option>
+                                    <?php if ($sql_roadmap_add_users) { ?>
+                                        <?php while ($user = mysqli_fetch_assoc($sql_roadmap_add_users)) { ?>
+                                            <option value="<?= intval($user['user_id']) ?>"><?= nullable_htmlentities($user['user_name']) ?></option>
+                                        <?php } ?>
+                                    <?php } ?>
+                                </select>
+                            </div>
+
+                            <div class="form-group col-md-4">
+                                <label>Target Phase / Release</label>
+                                <input type="text" class="form-control" name="roadmap_item_target_version" maxlength="64" placeholder="Optional, e.g. Phase 4, v2.5, Q3">
+                            </div>
+
+                            <div class="form-group col-md-4">
+                                <label>Sort Order</label>
+                                <input type="number" class="form-control" name="roadmap_item_sort_order" value="0">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group col-md-4">
+                                <label>Effort</label>
+                                <select class="form-control select2" name="roadmap_item_effort">
+                                    <?php foreach ($roadmap_add_efforts as $effort) { ?>
+                                        <option value="<?= nullable_htmlentities($effort) ?>" <?php if ($effort == 'Medium') { echo 'selected'; } ?>><?= nullable_htmlentities($effort) ?></option>
+                                    <?php } ?>
+                                </select>
+                            </div>
+
+                            <div class="form-group col-md-4">
+                                <label>Impact</label>
+                                <select class="form-control select2" name="roadmap_item_impact">
+                                    <?php foreach ($roadmap_add_impacts as $impact) { ?>
+                                        <option value="<?= nullable_htmlentities($impact) ?>" <?php if ($impact == 'Medium') { echo 'selected'; } ?>><?= nullable_htmlentities($impact) ?></option>
+                                    <?php } ?>
+                                </select>
+                            </div>
+
+                            <div class="form-group col-md-4">
+                                <label>Complexity</label>
+                                <select class="form-control select2" name="roadmap_item_complexity">
+                                    <?php foreach ($roadmap_add_complexities as $complexity) { ?>
+                                        <option value="<?= nullable_htmlentities($complexity) ?>" <?php if ($complexity == 'Medium') { echo 'selected'; } ?>><?= nullable_htmlentities($complexity) ?></option>
+                                    <?php } ?>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="custom-control custom-switch mb-3">
+                            <input type="checkbox" class="custom-control-input" id="roadmapItemPinnedAdd" name="roadmap_item_pinned" value="1">
+                            <label class="custom-control-label" for="roadmapItemPinnedAdd">Pin / feature this roadmap item</label>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Dependencies / Blockers</label>
+                            <textarea class="form-control" name="roadmap_item_dependencies" rows="3" placeholder="Optional dependencies, blockers, related phases, or required prerequisites"></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Internal Notes</label>
+                            <textarea class="form-control" name="roadmap_item_notes" rows="3"></textarea>
+                        </div>
+
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="submit" name="add_roadmap_item" class="btn btn-primary">
+                            <i class="fas fa-check mr-2"></i>Create
+                        </button>
+                        <button type="button" class="btn btn-secondary itflow-roadmap-add-modal-close" data-dismiss="modal" data-bs-dismiss="modal">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+<?php } ?>
+<!-- /ITFLOW_ROADMAP_ADD_INLINE_MODAL -->
+
+<!-- ITFLOW_ROADMAP_ADD_INLINE_MODAL_SCRIPT -->
 <script>
 (function() {
-    function closeRoadmapFallbackModal(modalEl) {
+    function closeInlineRoadmapAddModal(modalEl) {
         if (!modalEl) {
             return;
         }
@@ -162,17 +314,17 @@ if ($has_roadmap) {
         document.body.classList.remove('modal-open');
         document.body.style.removeProperty('padding-right');
 
-        var backdrops = document.querySelectorAll('.itflow-roadmap-manual-backdrop');
+        var backdrops = document.querySelectorAll('.itflow-roadmap-add-inline-backdrop');
         for (var i = 0; i < backdrops.length; i++) {
             backdrops[i].parentNode.removeChild(backdrops[i]);
         }
     }
 
-    function showRoadmapFallbackModal(container) {
-        var modalEl = container.querySelector('.modal');
+    function showInlineRoadmapAddModal() {
+        var modalEl = document.getElementById('addRoadmapItemModal');
 
         if (!modalEl) {
-            alert('Roadmap add modal loaded, but no modal markup was found.');
+            alert('Add Roadmap Item modal is missing from this page.');
             return;
         }
 
@@ -195,24 +347,31 @@ if ($has_roadmap) {
         document.body.classList.add('modal-open');
 
         var backdrop = document.createElement('div');
-        backdrop.className = 'modal-backdrop fade show itflow-roadmap-manual-backdrop';
+        backdrop.className = 'modal-backdrop fade show itflow-roadmap-add-inline-backdrop';
         document.body.appendChild(backdrop);
 
-        var closeButtons = modalEl.querySelectorAll('[data-dismiss="modal"], [data-bs-dismiss="modal"], .close');
+        var firstInput = modalEl.querySelector('input[name="roadmap_item_title"]');
+        if (firstInput) {
+            setTimeout(function() {
+                firstInput.focus();
+            }, 50);
+        }
+
+        var closeButtons = modalEl.querySelectorAll('.itflow-roadmap-add-modal-close, [data-dismiss="modal"], [data-bs-dismiss="modal"], .close');
         for (var i = 0; i < closeButtons.length; i++) {
             closeButtons[i].addEventListener('click', function(event) {
                 event.preventDefault();
-                closeRoadmapFallbackModal(modalEl);
+                closeInlineRoadmapAddModal(modalEl);
             });
         }
 
         backdrop.addEventListener('click', function() {
-            closeRoadmapFallbackModal(modalEl);
+            closeInlineRoadmapAddModal(modalEl);
         });
 
         document.addEventListener('keydown', function escHandler(event) {
             if (event.key === 'Escape') {
-                closeRoadmapFallbackModal(modalEl);
+                closeInlineRoadmapAddModal(modalEl);
                 document.removeEventListener('keydown', escHandler);
             }
         });
@@ -225,35 +384,14 @@ if ($has_roadmap) {
             return;
         }
 
-        var modalUrl = trigger.getAttribute('data-modal-url');
-
-        if (!modalUrl || typeof jQuery === 'undefined') {
-            return;
-        }
-
         event.preventDefault();
         event.stopPropagation();
 
-        jQuery.get(modalUrl)
-            .done(function(html) {
-                var container = document.getElementById('itflowRoadmapAddModalFallbackContainer');
-
-                if (!container) {
-                    container = document.createElement('div');
-                    container.id = 'itflowRoadmapAddModalFallbackContainer';
-                    document.body.appendChild(container);
-                }
-
-                container.innerHTML = html;
-                showRoadmapFallbackModal(container);
-            })
-            .fail(function(xhr) {
-                alert('Unable to load roadmap add modal. HTTP ' + xhr.status);
-            });
+        showInlineRoadmapAddModal();
     }, true);
 })();
 </script>
-<!-- /ITFLOW_ROADMAP_ADD_MODAL_FALLBACK -->
+<!-- /ITFLOW_ROADMAP_ADD_INLINE_MODAL_SCRIPT -->
 
 
 <?php require_once "includes/footer.php"; ?>
