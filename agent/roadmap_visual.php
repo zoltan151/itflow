@@ -145,49 +145,113 @@ if ($has_roadmap) {
     <?php } ?>
 </div>
 
-
 <!-- ITFLOW_ROADMAP_ADD_MODAL_FALLBACK -->
 <div id="itflowRoadmapAddModalFallbackContainer"></div>
 <script>
-document.addEventListener('click', function(event) {
-    var trigger = event.target.closest('.itflow-roadmap-add-action');
+(function() {
+    function closeRoadmapFallbackModal(modalEl) {
+        if (!modalEl) {
+            return;
+        }
 
-    if (!trigger) {
-        return;
+        modalEl.classList.remove('show');
+        modalEl.style.display = 'none';
+        modalEl.setAttribute('aria-hidden', 'true');
+        modalEl.removeAttribute('aria-modal');
+
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('padding-right');
+
+        var backdrops = document.querySelectorAll('.itflow-roadmap-manual-backdrop');
+        for (var i = 0; i < backdrops.length; i++) {
+            backdrops[i].parentNode.removeChild(backdrops[i]);
+        }
     }
 
-    var modalUrl = trigger.getAttribute('data-modal-url');
+    function showRoadmapFallbackModal(container) {
+        var modalEl = container.querySelector('.modal');
 
-    if (!modalUrl || typeof jQuery === 'undefined') {
-        return;
-    }
+        if (!modalEl) {
+            alert('Roadmap add modal loaded, but no modal markup was found.');
+            return;
+        }
 
-    event.preventDefault();
-    event.stopPropagation();
+        if (window.jQuery && typeof window.jQuery.fn.modal === 'function') {
+            window.jQuery(modalEl).modal('show');
+            return;
+        }
 
-    jQuery.get(modalUrl)
-        .done(function(html) {
-            var container = jQuery('#itflowRoadmapAddModalFallbackContainer');
+        if (window.bootstrap && typeof window.bootstrap.Modal === 'function') {
+            var nativeModal = new window.bootstrap.Modal(modalEl);
+            nativeModal.show();
+            return;
+        }
 
-            if (!container.length) {
-                jQuery('body').append('<div id="itflowRoadmapAddModalFallbackContainer"></div>');
-                container = jQuery('#itflowRoadmapAddModalFallbackContainer');
-            }
+        modalEl.style.display = 'block';
+        modalEl.classList.add('show');
+        modalEl.removeAttribute('aria-hidden');
+        modalEl.setAttribute('aria-modal', 'true');
 
-            container.html(html);
+        document.body.classList.add('modal-open');
 
-            var modal = container.find('.modal').first();
+        var backdrop = document.createElement('div');
+        backdrop.className = 'modal-backdrop fade show itflow-roadmap-manual-backdrop';
+        document.body.appendChild(backdrop);
 
-            if (modal.length && typeof modal.modal === 'function') {
-                modal.modal('show');
-            } else {
-                alert('Roadmap add modal loaded, but Bootstrap modal support was not available.');
-            }
-        })
-        .fail(function(xhr) {
-            alert('Unable to load roadmap add modal. HTTP ' + xhr.status);
+        var closeButtons = modalEl.querySelectorAll('[data-dismiss="modal"], [data-bs-dismiss="modal"], .close');
+        for (var i = 0; i < closeButtons.length; i++) {
+            closeButtons[i].addEventListener('click', function(event) {
+                event.preventDefault();
+                closeRoadmapFallbackModal(modalEl);
+            });
+        }
+
+        backdrop.addEventListener('click', function() {
+            closeRoadmapFallbackModal(modalEl);
         });
-}, true);
+
+        document.addEventListener('keydown', function escHandler(event) {
+            if (event.key === 'Escape') {
+                closeRoadmapFallbackModal(modalEl);
+                document.removeEventListener('keydown', escHandler);
+            }
+        });
+    }
+
+    document.addEventListener('click', function(event) {
+        var trigger = event.target.closest('.itflow-roadmap-add-action');
+
+        if (!trigger) {
+            return;
+        }
+
+        var modalUrl = trigger.getAttribute('data-modal-url');
+
+        if (!modalUrl || typeof jQuery === 'undefined') {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        jQuery.get(modalUrl)
+            .done(function(html) {
+                var container = document.getElementById('itflowRoadmapAddModalFallbackContainer');
+
+                if (!container) {
+                    container = document.createElement('div');
+                    container.id = 'itflowRoadmapAddModalFallbackContainer';
+                    document.body.appendChild(container);
+                }
+
+                container.innerHTML = html;
+                showRoadmapFallbackModal(container);
+            })
+            .fail(function(xhr) {
+                alert('Unable to load roadmap add modal. HTTP ' + xhr.status);
+            });
+    }, true);
+})();
 </script>
 <!-- /ITFLOW_ROADMAP_ADD_MODAL_FALLBACK -->
 
