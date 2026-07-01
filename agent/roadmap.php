@@ -10,7 +10,7 @@ require_once "includes/inc_all.php";
 
 enforceUserPermission('module_config');
 
-$page_title = "Platform Roadmap";
+$page_title = "InfoTech Infrastructure Roadmap";
 
 $roadmap_statuses = ['Backlog', 'Planned', 'In Development', 'Coming Soon', 'Shipped'];
 $roadmap_categories = ['Documentation', 'Credentials', 'Client Portal', 'Automation', 'Integrations', 'AI', 'Reporting', 'Security', 'Other'];
@@ -236,7 +236,7 @@ $sql_roadmap_items = mysqli_query(
 <div class="card card-dark">
     <div class="card-header py-2">
         <h3 class="card-title mt-2">
-            <i class="fas fa-fw fa-map-signs mr-2"></i>Platform Roadmap
+            <i class="fas fa-fw fa-map-signs mr-2"></i>InfoTech Infrastructure Roadmap
         </h3>
 <div class="mb-3">
 <!-- ITFLOW_CLASSIC_ROADMAP_VISUAL_LINK -->

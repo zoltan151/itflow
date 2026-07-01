@@ -76,8 +76,8 @@ if ($has_roadmap) {
 
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
-        <h3 class="mb-0">Platform Roadmap</h3>
-        <div class="text-muted">Visual roadmap timeline and priority board</div>
+        <h3 class="mb-0">InfoTech Infrastructure Roadmap</h3>
+        <div class="text-muted">Visual roadmap for ITFlow, RMM, backups, integrations, automation, and infrastructure improvements</div>
     </div>
     <div>
         <a href="roadmap.php" class="btn btn-outline-secondary">Classic Board</a>

@@ -5779,6 +5779,118 @@ END");
     }
 
 
+
+    if (CURRENT_DATABASE_VERSION == '2.4.4.59') {
+        // ITFLOW_INFRASTRUCTURE_ROADMAP_ITEMS_PHASE3I
+        $infrastructure_roadmap_items = [
+            [
+                'InfoTech Infrastructure Roadmap Expansion',
+                'Expand the roadmap from an ITFlow-only platform roadmap into a company-wide infrastructure roadmap covering ITFlow, RMM, backup, tray agent, VoIP, network platforms, security tooling, integrations, automation, and client-facing service improvements.',
+                'Other', 'Planned', 'Critical', 'Medium', 'Critical', 'Medium',
+                -981500, 1, 'Other', '2026-07-01', '2026-09-30', 10
+            ],
+            [
+                'InfoTech Infrastructure Control Plane',
+                'Create a unified operational control plane that connects ITFlow with RMM, backups, VoIP, network tools, security tooling, documentation, onboarding, reporting, and automation so InfoTech can manage its service stack from one place.',
+                'Automation', 'Backlog', 'Critical', 'Very Large', 'Critical', 'Very High',
+                -981000, 1, 'Automation', '2026-10-01', '2027-06-30', 0
+            ],
+            [
+                'UrBackup Server Integration',
+                'Integrate ITFlow with the UrBackup server to document backup clients, backup status, failed backups, last successful backup, protected systems, storage usage, alerts, and client backup health reporting.',
+                'Integrations', 'Planned', 'High', 'Large', 'High', 'High',
+                -980500, 1, 'Integrations', '2027-01-01', '2027-06-30', 0
+            ],
+            [
+                'UrBackup Server Rebranding / White Labeling',
+                'Rebrand and white label the UrBackup server interface so backup management aligns with InfoTech branding, client-facing reporting, and the broader managed services platform experience.',
+                'Integrations', 'Backlog', 'High', 'Medium', 'High', 'Medium',
+                -980000, 0, 'Integrations', '2027-01-01', '2027-03-31', 0
+            ],
+            [
+                'UrBackup Client Software Rebranding',
+                'Rebrand the UrBackup client software, tray identity, installer experience, service naming, visible client labels, and any user-facing messaging so endpoints present the backup tool as part of InfoTech\'s managed service stack.',
+                'Integrations', 'Backlog', 'High', 'Large', 'High', 'High',
+                -979500, 0, 'Integrations', '2027-01-01', '2027-06-30', 0
+            ],
+            [
+                'RMM Server Rebranding / White Labeling',
+                'Rebrand and white label the RMM server interface, login experience, visible labels, notifications, agent download pages, and client-facing references so the platform aligns with InfoTech\'s managed service identity.',
+                'Automation', 'Planned', 'High', 'Large', 'High', 'High',
+                -979000, 1, 'Automation', '2026-10-01', '2027-03-31', 0
+            ],
+            [
+                'RMM Agent Rebranding / White Labeling',
+                'Rebrand the RMM agent software, installer, service identity, tray or endpoint-visible names, support links, update labels, and user-facing references while keeping the implementation public-friendly and configurable.',
+                'Automation', 'Planned', 'High', 'Very Large', 'High', 'Very High',
+                -978500, 1, 'Automation', '2026-10-01', '2027-06-30', 0
+            ],
+            [
+                'Backup Health Module',
+                'Build a backup health module that tracks protected assets, backup recency, failures, stale clients, backup storage consumption, alerting, client reporting, and ticket generation for backup issues.',
+                'Reporting', 'Planned', 'High', 'Large', 'High', 'High',
+                -978000, 1, 'Integrations', '2027-01-01', '2027-06-30', 0
+            ]
+        ];
+
+        foreach ($infrastructure_roadmap_items as $item) {
+            $title = mysqli_real_escape_string($mysqli, $item[0]);
+            $description = mysqli_real_escape_string($mysqli, $item[1]);
+            $category = mysqli_real_escape_string($mysqli, $item[2]);
+            $status = mysqli_real_escape_string($mysqli, $item[3]);
+            $priority = mysqli_real_escape_string($mysqli, $item[4]);
+            $effort = mysqli_real_escape_string($mysqli, $item[5]);
+            $impact = mysqli_real_escape_string($mysqli, $item[6]);
+            $complexity = mysqli_real_escape_string($mysqli, $item[7]);
+            $sort_order = intval($item[8]);
+            $pinned = intval($item[9]);
+            $lane = mysqli_real_escape_string($mysqli, $item[10]);
+            $start_date = mysqli_real_escape_string($mysqli, $item[11]);
+            $target_date = mysqli_real_escape_string($mysqli, $item[12]);
+            $progress = intval($item[13]);
+
+            $existing_item = mysqli_query($mysqli, "SELECT roadmap_item_id FROM roadmap_items WHERE roadmap_item_title = '$title' LIMIT 1");
+
+            if ($existing_item && mysqli_num_rows($existing_item) == 0) {
+                mysqli_query($mysqli, "INSERT INTO roadmap_items SET
+                    roadmap_item_title = '$title',
+                    roadmap_item_description = '$description',
+                    roadmap_item_category = '$category',
+                    roadmap_item_status = '$status',
+                    roadmap_item_priority = '$priority',
+                    roadmap_item_effort = '$effort',
+                    roadmap_item_impact = '$impact',
+                    roadmap_item_complexity = '$complexity',
+                    roadmap_item_sort_order = $sort_order,
+                    roadmap_item_pinned = $pinned,
+                    roadmap_item_lane = '$lane',
+                    roadmap_item_start_date = '$start_date',
+                    roadmap_item_target_date = '$target_date',
+                    roadmap_item_progress = $progress,
+                    roadmap_item_created_by = 0");
+            } else {
+                mysqli_query($mysqli, "UPDATE roadmap_items SET
+                    roadmap_item_description = '$description',
+                    roadmap_item_category = '$category',
+                    roadmap_item_status = '$status',
+                    roadmap_item_priority = '$priority',
+                    roadmap_item_effort = '$effort',
+                    roadmap_item_impact = '$impact',
+                    roadmap_item_complexity = '$complexity',
+                    roadmap_item_sort_order = $sort_order,
+                    roadmap_item_pinned = $pinned,
+                    roadmap_item_lane = '$lane',
+                    roadmap_item_start_date = '$start_date',
+                    roadmap_item_target_date = '$target_date',
+                    roadmap_item_progress = $progress
+                    WHERE roadmap_item_title = '$title'");
+            }
+        }
+
+        mysqli_query($mysqli, "UPDATE `settings` SET `config_current_database_version` = '2.4.4.60'");
+    }
+
+
 }
 
 
