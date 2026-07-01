@@ -259,7 +259,7 @@ $sql_roadmap_items = mysqli_query(
         <div>
             <!-- ITFLOW_ROADMAP_ADD_ACTION -->
             <?php if (lookupUserPermission("module_config") >= 2) { ?>
-                <button type="button" class="btn btn-primary ajax-modal" data-modal-url="modals/roadmap/roadmap_add.php" data-modal-size="lg">
+                <button type="button" class="btn btn-primary ajax-modal itflow-roadmap-add-action" data-modal-url="modals/roadmap/roadmap_add.php" data-modal-size="lg">
                     <i class="fas fa-fw fa-plus mr-1"></i> Add Roadmap Item
                 </button>
             <?php } ?>
@@ -683,6 +683,53 @@ document.addEventListener('DOMContentLoaded', function () {
     }, true);
 });
 </script>
+
+
+
+<!-- ITFLOW_ROADMAP_ADD_MODAL_FALLBACK -->
+<div id="itflowRoadmapAddModalFallbackContainer"></div>
+<script>
+document.addEventListener('click', function(event) {
+    var trigger = event.target.closest('.itflow-roadmap-add-action');
+
+    if (!trigger) {
+        return;
+    }
+
+    var modalUrl = trigger.getAttribute('data-modal-url');
+
+    if (!modalUrl || typeof jQuery === 'undefined') {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    jQuery.get(modalUrl)
+        .done(function(html) {
+            var container = jQuery('#itflowRoadmapAddModalFallbackContainer');
+
+            if (!container.length) {
+                jQuery('body').append('<div id="itflowRoadmapAddModalFallbackContainer"></div>');
+                container = jQuery('#itflowRoadmapAddModalFallbackContainer');
+            }
+
+            container.html(html);
+
+            var modal = container.find('.modal').first();
+
+            if (modal.length && typeof modal.modal === 'function') {
+                modal.modal('show');
+            } else {
+                alert('Roadmap add modal loaded, but Bootstrap modal support was not available.');
+            }
+        })
+        .fail(function(xhr) {
+            alert('Unable to load roadmap add modal. HTTP ' + xhr.status);
+        });
+}, true);
+</script>
+<!-- /ITFLOW_ROADMAP_ADD_MODAL_FALLBACK -->
 
 
 <?php require_once "includes/footer.php"; ?>
