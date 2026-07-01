@@ -238,6 +238,14 @@ $sql_roadmap_items = mysqli_query(
         <h3 class="card-title mt-2">
             <i class="fas fa-fw fa-map-signs mr-2"></i>Platform Roadmap
         </h3>
+<div class="mb-3">
+<!-- ITFLOW_CLASSIC_ROADMAP_VISUAL_LINK -->
+<a href="roadmap_visual.php" class="btn btn-primary">
+    <i class="fas fa-stream mr-1"></i> Visual Roadmap
+</a>
+<!-- /ITFLOW_CLASSIC_ROADMAP_VISUAL_LINK -->
+</div>
+
 
         <div class="card-tools">
             <?php if (lookupUserPermission("module_config") >= 2) { ?>
