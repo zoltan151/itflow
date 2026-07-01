@@ -100,7 +100,7 @@ if ($has_roadmap) {
             <div>
                 <!-- ITFLOW_ROADMAP_ADD_ACTION -->
                 <?php if (lookupUserPermission("module_config") >= 2) { ?>
-                    <button type="button" class="btn btn-primary ajax-modal itflow-roadmap-add-action" data-modal-url="modals/roadmap/roadmap_add.php" data-modal-size="lg">
+                    <button type="button" class="btn btn-primary ajax-modal itflow-roadmap-add-action" data-modal-url="modals/roadmap_add.php" data-modal-size="lg">
                         <i class="fas fa-fw fa-plus mr-1"></i> Add Roadmap Item
                     </button>
                 <?php } ?>

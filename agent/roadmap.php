@@ -259,7 +259,7 @@ $sql_roadmap_items = mysqli_query(
         <div>
             <!-- ITFLOW_ROADMAP_ADD_ACTION -->
             <?php if (lookupUserPermission("module_config") >= 2) { ?>
-                <button type="button" class="btn btn-primary ajax-modal itflow-roadmap-add-action" data-modal-url="modals/roadmap/roadmap_add.php" data-modal-size="lg">
+                <button type="button" class="btn btn-primary ajax-modal itflow-roadmap-add-action" data-modal-url="modals/roadmap_add.php" data-modal-size="lg">
                     <i class="fas fa-fw fa-plus mr-1"></i> Add Roadmap Item
                 </button>
             <?php } ?>
@@ -477,7 +477,7 @@ $sql_roadmap_items = mysqli_query(
                                             <span class="sr-only">Roadmap item actions</span>
                                         </button>
                                         <div class="dropdown-menu dropdown-menu-right">
-                                            <a class="dropdown-item ajax-modal itflow-roadmap-edit-action" href="#" data-modal-url="modals/roadmap/roadmap_edit.php?id=<?= $roadmap_item_id ?>" data-modal-size="lg">
+                                            <a class="dropdown-item ajax-modal itflow-roadmap-edit-action" href="#" data-modal-url="modals/roadmap_edit.php?id=<?= $roadmap_item_id ?>" data-modal-size="lg">
                                                 <i class="fas fa-edit fa-fw mr-2"></i>Edit
                                             </a>
                                             <?php if (!$archived_at) { ?>
